@@ -1,0 +1,21 @@
+id = "dracula"
+name = "Dracula"
+family = "Dracula"
+variant = "dark"
+
+# subtext is omitted: Dracula defines no muted foreground, so Pinta derives one.
+
+[colors]
+base = "#282a36"
+mantle = "#21222c"
+crust = "#191a21"
+surface = "#44475a"
+overlay = "#6272a4"
+text = "#f8f8f2"
+accent = "#bd93f9"
+red = "#ff5555"
+orange = "#ffb86c"
+yellow = "#f1fa8c"
+green = "#50fa7b"
+blue = "#8be9fd" # Dracula has no blue; cyan stands in
+purple = "#bd93f9"

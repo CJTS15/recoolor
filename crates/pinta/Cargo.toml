@@ -1,0 +1,10 @@
+[package]
+name = "pinta"
+description = "Theme switcher for GNOME"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+pinta-core.workspace = true
