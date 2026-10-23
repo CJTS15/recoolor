@@ -188,26 +188,79 @@ fn running(name: &str) -> bool {
     .is_ok_and(|reply| reply.get::<(bool,)>().is_some_and(|(owned,)| owned))
 }
 
-/// Quits Files (Nautilus) if it is running. It stays in the background after its
-/// windows close, so without this it keeps the styles it started with; the next
-/// window opens with the new ones.
-pub fn quit_files() -> Result<(), String> {
-    const NAME: &str = "org.gnome.Nautilus";
-    if !running(NAME) {
-        return Ok(());
+/// Restarts apps that keep running in the background after their windows close,
+/// so they reopen with the new styles (GTK reads them only at startup). Files is
+/// quit (`kill`, what `nautilus -q` runs; `quit` only closes its windows).
+/// Calendar's service shows event reminders, so it is started again.
+pub fn restart_background_apps() -> Result<(), String> {
+    let mut problems = Vec::new();
+    if running("org.gnome.Nautilus") {
+        if let Err(e) = activate_action("org.gnome.Nautilus", "/org/gnome/Nautilus", "kill") {
+            problems.push(format!("cannot quit Files: {e}"));
+        }
     }
-    // `kill`, what `nautilus -q` runs; `quit` only closes the windows.
+    const CALENDAR: &str = "org.gnome.Calendar";
+    if running(CALENDAR) {
+        // Its `quit` action keeps the reminder service alive, so stop the process.
+        let restarted = terminate(CALENDAR).and_then(|()| {
+            // A new service would only hand over to the old one while it lives.
+            for _ in 0..60 {
+                if !running(CALENDAR) {
+                    return Command::new("gnome-calendar")
+                        .arg("--gapplication-service")
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn()
+                        .map(drop)
+                        .map_err(|e| e.to_string());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err("it did not quit".into())
+        });
+        if let Err(e) = restarted {
+            problems.push(format!("cannot restart Calendar: {e}"));
+        }
+    }
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(problems.join("; "))
+    }
+}
+
+/// Sends SIGTERM to the process that owns `name` on the session bus.
+fn terminate(name: &str) -> Result<(), String> {
+    let reply = session_call(
+        "org.freedesktop.DBus",
+        "/org/freedesktop/DBus",
+        "org.freedesktop.DBus",
+        "GetConnectionUnixProcessID",
+        Some((name,).to_variant()),
+    )?;
+    let (pid,) = reply.get::<(u32,)>().ok_or("no process id")?;
+    let status = Command::new("kill")
+        .args(["-TERM", &pid.to_string()])
+        .status()
+        .map_err(|e| e.to_string())?;
+    status
+        .success()
+        .then_some(())
+        .ok_or_else(|| format!("kill failed ({status})"))
+}
+
+fn activate_action(name: &str, path: &str, action: &str) -> Result<(), String> {
     let no_params: Vec<glib::Variant> = Vec::new();
     let no_platform: std::collections::HashMap<String, glib::Variant> = Default::default();
     session_call(
-        NAME,
-        "/org/gnome/Nautilus",
+        name,
+        path,
         "org.gtk.Actions",
         "Activate",
-        Some(("kill", no_params, no_platform).to_variant()),
+        Some((action, no_params, no_platform).to_variant()),
     )
-    .map(|_| ())
-    .map_err(|e| format!("cannot quit Files: {e}"))
+    .map(drop)
 }
 
 /// Asks Recoolor's Shell extension to `Freeze` or `Fade` the screen. Does nothing

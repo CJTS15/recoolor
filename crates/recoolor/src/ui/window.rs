@@ -12,6 +12,7 @@ use recoolor_core::apps::slack;
 use recoolor_core::palette::{self, Palette, Variant};
 use recoolor_core::{ApplyError, CssState, GtkConfig, RestoreOutcome, Status, Toolkit, css, paths};
 
+use super::accent::AccentRow;
 use super::extras::ExtrasRows;
 use super::palette_card::PaletteCard;
 use super::preview;
@@ -38,6 +39,7 @@ struct Window {
     style: adw::StyleManager,
     /// GNOME's interface settings, for the accent picked in Settings.
     interface: Option<gtk::gio::Settings>,
+    accent: Option<AccentRow>,
     preview: gtk::CssProvider,
     previewing: Cell<bool>,
     /// Counts palette changes, so only the last one ends the color fade.
@@ -152,7 +154,12 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     if let Some(dirs) = &dirs {
         extras.set(&targets::current(dirs));
     }
+    let interface = desktop::interface_settings();
+    let accent = interface.as_ref().and_then(AccentRow::new);
     side.append(&pair_group);
+    if let Some(accent) = &accent {
+        side.append(&accent.group);
+    }
     side.append(&extras.group);
     side.append(&extras.apps_group);
     side.append(&preview::build());
@@ -196,14 +203,22 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
 
     // Colors fade while the `fading` class is on the window. Only then, so the
     // transition does not replace libadwaita's own ones the rest of the time.
-    // The selected card shows through the preview, so it needs no highlight; the
-    // keyboard focus ring stays.
+    // The selected card and accent get an accent-colored ring that follows their
+    // own rounded corners (GTK draws outlines along the border radius) instead of
+    // the flow box's square selection background.
     let fade = gtk::CssProvider::new();
     fade.load_from_string(
         "window.fading, window.fading * { transition: background-color 400ms ease-out, \
          color 400ms ease-out, border-color 400ms ease-out, box-shadow 400ms ease-out, \
          outline-color 400ms ease-out; }\n\
-         flowboxchild:selected { background: none; }",
+         flowboxchild:selected { background: none; }\n\
+         flowboxchild > .card { outline: 2px solid transparent; outline-offset: 2px; \
+         transition: outline-color 200ms ease-out; }\n\
+         flowboxchild:selected > .card { outline-color: var(--accent-color); }\n\
+         flowboxchild:hover:not(:selected) > .card { outline-color: alpha(currentColor, 0.15); }\n\
+         button.accent-swatch { padding: 4px; outline: 2px solid transparent; \
+         outline-offset: -2px; transition: outline-color 200ms ease-out; }\n\
+         button.accent-swatch:checked { background: none; outline-color: var(--accent-color); }",
     );
     if let Some(display) = gdk::Display::default() {
         gtk::style_context_add_provider_for_display(
@@ -244,7 +259,8 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         dark_row: dark_row.clone(),
         apply: apply.clone(),
         style: adw::StyleManager::default(),
-        interface: desktop::interface_settings(),
+        interface,
+        accent,
         preview,
         previewing: Cell::new(false),
         fading: Rc::new(Cell::new(0)),
@@ -270,7 +286,12 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         .connect_dark_notify(move |_| w.grid.invalidate_filter());
     if let Some(interface) = &win.interface {
         let w = win.clone();
-        interface.connect_changed(Some("accent-color"), move |_, _| w.update_preview());
+        interface.connect_changed(Some("accent-color"), move |s, _| {
+            if let Some(accent) = &w.accent {
+                accent.select(desktop::accent_choice(s).as_deref());
+            }
+            w.update_preview();
+        });
     }
 
     let w = win.clone();
@@ -304,6 +325,11 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         if let Some(card) = win.palettes.iter().position(|p| &p.id == id) {
             grid.select_child(&win.cards[card].child);
         }
+    }
+
+    // In the applied palette's colors from the start, or GNOME's without one.
+    if let Some(accent) = &win.accent {
+        accent.set_palette(win.palette_in_view());
     }
 
     window
@@ -374,6 +400,9 @@ impl Window {
             self.selected().map(|p| Toolkit::Gtk4.render(&tint(p)))
         };
         self.set_preview(css.as_deref());
+        if let Some(accent) = &self.accent {
+            accent.set_palette(self.palette_in_view());
+        }
         self.update_apply();
     }
 
@@ -428,6 +457,11 @@ impl Window {
     /// card, else the pair's current half, else what is applied.
     fn shown_palette(&self) -> Option<Palette> {
         let accent = self.interface.as_ref().and_then(desktop::accent_choice);
+        Some(self.palette_in_view()?.with_accent(accent.as_deref()))
+    }
+
+    /// The selected card, else the pair's current half, else what is applied.
+    fn palette_in_view(&self) -> Option<&Palette> {
         let dark = self.style.is_dark();
         let in_view = if self.pair.is_active() {
             self.pair_choice().map(|(l, d)| if dark { d } else { l })
@@ -449,7 +483,7 @@ impl Window {
             };
             self.palettes.iter().find(|p| p.id == id)
         })?;
-        Some(palette.with_accent(accent.as_deref()))
+        Some(palette)
     }
 
     fn show_slack_colors(&self) {
