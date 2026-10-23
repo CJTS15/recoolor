@@ -1,0 +1,28 @@
+id = "rose-pine-moon"
+name = "Rosé Pine Moon"
+family = "Rosé Pine"
+variant = "dark"
+
+# crust is derived. Pine and gold stand in for green and orange, as in Gogh.
+
+[colors]
+base = "#232136"
+mantle = "#2a273f"
+crust = "#1b1a2b"
+surface = "#393552"
+overlay = "#6e6a86"
+text = "#e0def4"
+subtext = "#908caa"
+accent = "#c4a7e7"
+red = "#eb6f92"
+orange = "#f6c177"
+yellow = "#f6c177"
+green = "#3e8fb0"
+blue = "#9ccfd8"
+teal = "#9ccfd8"
+purple = "#c4a7e7"
+pink = "#ea9a97"
+
+# Same theme as shipped for other apps, used when installed.
+[apps]
+ptyxis = "Rosé Pine Moon"

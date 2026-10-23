@@ -1,0 +1,28 @@
+id = "rose-pine"
+name = "Rosé Pine"
+family = "Rosé Pine"
+variant = "dark"
+
+# crust is derived. Rosé Pine has no green or orange: pine and gold stand in, as in Gogh.
+
+[colors]
+base = "#191724"
+mantle = "#1f1d2e"
+crust = "#121019"
+surface = "#26233a"
+overlay = "#6e6a86"
+text = "#e0def4"
+subtext = "#908caa"
+accent = "#c4a7e7"
+red = "#eb6f92"
+orange = "#f6c177"
+yellow = "#f6c177"
+green = "#31748f"
+blue = "#9ccfd8"
+teal = "#9ccfd8"
+purple = "#c4a7e7"
+pink = "#ebbcba"
+
+# Same theme as shipped for other apps, used when installed.
+[apps]
+ptyxis = "Rosé Pine"

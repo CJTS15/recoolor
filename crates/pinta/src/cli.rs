@@ -1,25 +1,29 @@
 //! Pinta command line.
 
 use pinta_core::palette::{self, Palette, Variant};
-use pinta_core::{CssState, GtkConfig, RestoreOutcome, Toolkit, paths};
+use pinta_core::{CssState, GtkConfig, RestoreOutcome, Toolkit, css, paths, shell};
 
-use crate::desktop;
+use crate::desktop::{self, Dirs};
+use crate::targets::{self, Choice};
 
 const USAGE: &str = "\
 Usage: pinta <command>
 
 Commands:
   list               List available palettes
-  show <id> [gtk3]   Print the generated GTK4 (or GTK3) CSS
-  apply <id>         Apply a palette to GTK3 and GTK4 apps
+  show <id> [gtk3|shell]
+                     Print the generated GTK4 (or GTK3, or GNOME Shell) CSS
+  apply <id>         Apply a palette to GTK apps, and to whatever else Pinta
+                     already themes (Flatpak, Shell, icons, cursors)
   apply <light> <dark>
                      Apply a pair that follows GNOME's light/dark style
-  restore            Remove Pinta's CSS and bring back what was there before
+  restore            Undo everything Pinta changed
   status             Show what is applied
-  watch              Keep GTK3 apps in step with the light/dark style
-                     (started for you as a user service by `apply <light> <dark>`)
+  watch              Keep everything in step with GNOME's light/dark style and
+                     accent color (started for you as a user service by `apply`)
 
-Run `pinta` with no command to open the window. Restart apps to see changes.";
+Run `pinta` with no command to open the window, where Flatpak, Shell, icons and
+cursors are turned on. Restart apps to see changes.";
 
 pub fn run(args: &[&str]) -> Result<(), String> {
     match args {
@@ -37,34 +41,29 @@ pub fn run(args: &[&str]) -> Result<(), String> {
             print!("{}", Toolkit::Gtk3.render(&find(id)?));
             Ok(())
         }
-        ["apply", id] => {
+        ["show", id, "shell"] => {
             let palette = find(id)?;
-            gtk_config()?.apply(&palette).map_err(|e| e.to_string())?;
-            desktop::set_watch(&desktop::config_home()?, false)?;
-            println!("Applied {}. Restart apps to see it.", palette.name);
+            print!(
+                "{}",
+                css::shell(&palette, &desktop::shell_default_css(palette.variant)?)
+            );
             Ok(())
         }
+        ["apply", id] => apply(Choice::Single(&find(id)?)),
         ["apply", light, dark] => {
             let (light, dark) = (find(light)?, find(dark)?);
             if (light.variant, dark.variant) != (Variant::Light, Variant::Dark) {
                 return Err("give a light palette first, then a dark one".to_owned());
             }
-            let dark_now = desktop::system_prefers_dark();
-            gtk_config()?
-                .apply_pair(&light, &dark, dark_now)
-                .map_err(|e| e.to_string())?;
-            println!(
-                "Applied {} and {}. Restart apps to see it.",
-                light.name, dark.name
-            );
-            if let Err(e) = desktop::set_watch(&desktop::config_home()?, true) {
-                println!("GTK3 apps will not follow light/dark switches: {e}");
-            }
-            Ok(())
+            apply(Choice::Pair {
+                light: &light,
+                dark: &dark,
+            })
         }
-        ["watch"] => desktop::watch(desktop::config_home()?),
+        ["watch"] => targets::watch(Dirs::find()?),
         ["restore"] => {
-            for (toolkit, outcome) in gtk_config()?.restore().map_err(|e| e.to_string())? {
+            let (outcomes, problems) = targets::reset(&Dirs::find()?);
+            for (toolkit, outcome) in outcomes {
                 let what = match outcome {
                     RestoreOutcome::Restored => "restored your previous gtk.css",
                     RestoreOutcome::Removed => "removed Pinta's gtk.css",
@@ -73,7 +72,7 @@ pub fn run(args: &[&str]) -> Result<(), String> {
                 };
                 println!("{}: {what}", toolkit.dir_name());
             }
-            desktop::set_watch(&desktop::config_home()?, false)
+            report(problems)
         }
         ["status"] => {
             for s in gtk_config()?.status().map_err(|e| e.to_string())? {
@@ -87,6 +86,28 @@ pub fn run(args: &[&str]) -> Result<(), String> {
                 };
                 let backup = if s.has_backup { " (backup kept)" } else { "" };
                 println!("{}: {css}{backup}", s.toolkit.dir_name());
+            }
+            let dirs = Dirs::find()?;
+            let extras = targets::current(&dirs);
+            let shell = match shell::status(&dirs.data) {
+                Ok(CssState::Pinta(id)) => format!("Pinta palette {id}"),
+                _ => "not themed by Pinta".to_owned(),
+            };
+            let or_unset = |v: Option<String>| v.unwrap_or_else(|| "not set by Pinta".into());
+            let on = |b: bool| {
+                if b {
+                    "can read the styles"
+                } else {
+                    "cannot read the styles"
+                }
+            };
+            println!("flatpak: {}", on(extras.flatpak));
+            println!("shell: {shell}");
+            println!("icons: {}", or_unset(extras.icons));
+            println!("cursors: {}", or_unset(extras.cursors));
+            match desktop::interface_settings().and_then(|s| desktop::accent_choice(&s)) {
+                Some(name) => println!("accent: the palette's {name} (picked in Settings)"),
+                None => println!("accent: the palette's own"),
             }
             Ok(())
         }
@@ -114,5 +135,27 @@ fn find(id: &str) -> Result<Palette, String> {
 }
 
 fn gtk_config() -> Result<GtkConfig, String> {
-    desktop::config_home().map(GtkConfig::new)
+    Dirs::find().map(|d| GtkConfig::new(d.config))
+}
+
+/// Applies to GTK and to the extras Pinta already manages, so the command line
+/// recolors everything the window set up.
+fn apply(choice: Choice) -> Result<(), String> {
+    let dirs = Dirs::find()?;
+    let extras = targets::current(&dirs);
+    let problems = targets::apply(&dirs, choice, &extras, desktop::system_prefers_dark())
+        .map_err(|e| e.to_string())?;
+    println!("Applied {}. Restart apps to see it.", choice.name());
+    report(problems)
+}
+
+/// Prints each problem; fails if there were any.
+fn report(problems: Vec<String>) -> Result<(), String> {
+    for p in &problems {
+        eprintln!("pinta: {p}");
+    }
+    match problems.len() {
+        0 => Ok(()),
+        n => Err(format!("{n} problem(s); see above")),
+    }
 }

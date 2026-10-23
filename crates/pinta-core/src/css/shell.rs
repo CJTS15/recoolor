@@ -1,0 +1,241 @@
+//! GNOME Shell.
+//!
+//! Rather than hand-written overrides that drift between Shell releases, this
+//! recolors the Shell's own default stylesheet (`gnome-shell-dark.css` or
+//! `gnome-shell-light.css`, which the app reads from the installed Shell), so
+//! coverage always matches the running version:
+//!
+//! - neutral greys map onto the palette's base-to-text ramp by lightness,
+//! - saturated colors map to the palette color with the nearest hue,
+//! - `-st-accent-color` becomes the palette's accent.
+//!
+//! Only property values outside strings are touched, so `#dad` stays an id and
+//! `url("…#bad.svg")` stays a path.
+
+use super::{Roles, header};
+use crate::color::Color;
+use crate::palette::{Palette, Variant};
+
+/// Lightness of Adwaita's Shell background and foreground greys (`#222226`, `#fafafb`).
+const ADWAITA_DARK: f32 = 0.1386;
+const ADWAITA_LIGHT: f32 = 0.9817;
+const WHITE: Color = Color::rgb(255, 255, 255);
+const BLACK: Color = Color::rgb(0, 0, 0);
+
+/// `default_css` must be the Shell stylesheet for `palette.variant`.
+pub fn shell(palette: &Palette, default_css: &str) -> String {
+    header(&palette.id) + &recolor(palette, default_css)
+}
+
+fn recolor(palette: &Palette, css: &str) -> String {
+    let accent = palette.colors.accent.to_string();
+    let accent_fg = Roles::new(palette).accent_fg.to_string();
+    let bytes = css.as_bytes();
+    let mut out = String::with_capacity(css.len());
+    let (mut i, mut copied) = (0, 0);
+    let (mut depth, mut in_value) = (0u32, false);
+
+    while i < bytes.len() {
+        if bytes[i..].starts_with(b"/*") {
+            i = css[i..].find("*/").map_or(bytes.len(), |end| i + end + 2);
+            continue;
+        }
+        if let quote @ (b'"' | b'\'') = bytes[i] {
+            i = css[i + 1..]
+                .find(char::from(quote))
+                .map_or(bytes.len(), |end| i + 1 + end + 1);
+            continue;
+        }
+        let replacement = match bytes[i] {
+            b'{' => {
+                depth += 1;
+                in_value = false;
+                None
+            }
+            b'}' => {
+                depth = depth.saturating_sub(1);
+                in_value = false;
+                None
+            }
+            b':' if depth > 0 => {
+                in_value = true;
+                None
+            }
+            b';' => {
+                in_value = false;
+                None
+            }
+            _ if in_value => token_at(css, i, palette, &accent, &accent_fg),
+            _ => None,
+        };
+        match replacement {
+            Some((len, text)) => {
+                out.push_str(&css[copied..i]);
+                out.push_str(&text);
+                i += len;
+                copied = i;
+            }
+            None => i += 1,
+        }
+    }
+    out.push_str(&css[copied..]);
+    out
+}
+
+/// A color token starting at `i`, as (its length, the replacement).
+fn token_at(
+    css: &str,
+    i: usize,
+    palette: &Palette,
+    accent: &str,
+    accent_fg: &str,
+) -> Option<(usize, String)> {
+    let rest = &css[i..];
+    let bytes = rest.as_bytes();
+    let ident = |b: u8| b.is_ascii_alphanumeric() || b == b'-' || b == b'_';
+    let starts_word = i == 0 || !ident(css.as_bytes()[i - 1]);
+
+    for (name, value) in [
+        ("-st-accent-fg-color", accent_fg),
+        ("-st-accent-color", accent),
+    ] {
+        if rest.starts_with(name) {
+            return Some((name.len(), value.to_owned()));
+        }
+    }
+
+    if bytes[0] == b'#' {
+        let digits = bytes[1..]
+            .iter()
+            .take_while(|b| b.is_ascii_hexdigit())
+            .count();
+        let ends = bytes.get(1 + digits).is_none_or(|&b| !ident(b));
+        let hex = match digits {
+            6 => rest[1..7].to_owned(),
+            3 => rest[1..4].chars().flat_map(|c| [c, c]).collect(),
+            _ => return None,
+        };
+        let color = Color::from_hex(&format!("#{hex}")).ok().filter(|_| ends)?;
+        return Some((1 + digits, map(color, palette).to_string()));
+    }
+
+    if starts_word && (rest.starts_with("rgba(") || rest.starts_with("rgb(")) {
+        let open = rest.find('(')?;
+        let close = rest.find(')')?;
+        let parts: Vec<&str> = rest[open + 1..close].split(',').map(str::trim).collect();
+        let channel = |k: usize| parts.get(k)?.parse::<u8>().ok();
+        let color = map(Color::rgb(channel(0)?, channel(1)?, channel(2)?), palette);
+        let text = match parts.get(3) {
+            Some(alpha) if parts.len() == 4 => {
+                format!("rgba({}, {}, {}, {alpha})", color.r, color.g, color.b)
+            }
+            None => color.to_string(),
+            _ => return None,
+        };
+        return Some((close + 1, text));
+    }
+
+    for (name, color) in [("white", WHITE), ("black", BLACK)] {
+        let ends = bytes.get(name.len()).is_none_or(|&b| !ident(b));
+        if starts_word && ends && rest.starts_with(name) {
+            return Some((name.len(), map(color, palette).to_string()));
+        }
+    }
+    None
+}
+
+/// The palette color standing in for one of Adwaita's.
+fn map(color: Color, palette: &Palette) -> Color {
+    let c = &palette.colors;
+    let Some(hue) = color.hue() else {
+        let lightness =
+            (f32::from(color.r) + f32::from(color.g) + f32::from(color.b)) / 3.0 / 255.0;
+        let (bg, fg) = match palette.variant {
+            Variant::Dark => (ADWAITA_DARK, ADWAITA_LIGHT),
+            Variant::Light => (ADWAITA_LIGHT, ADWAITA_DARK),
+        };
+        let t = (lightness - bg) / (fg - bg);
+        if t >= 0.0 {
+            return c.base.mix(c.text, t);
+        }
+        // Beyond the background, away from the text: the panel's black, white cards.
+        return match palette.variant {
+            Variant::Dark => c.base.mix(c.crust, (bg - lightness) / bg),
+            Variant::Light => c.base.mix(WHITE, (lightness - bg) / (1.0 - bg) * 0.5),
+        };
+    };
+
+    // ponytail: every shade of a hue maps to one palette color, so Adwaita's
+    // hover/pressed variants of red or yellow look the same. Keep the lightness
+    // offset if that shows.
+    match hue {
+        h if !(15.0..345.0).contains(&h) => c.red,
+        // Adwaita's warning yellows sit at 42°.
+        h if h < 40.0 => c.orange,
+        h if h < 70.0 => c.yellow,
+        h if h < 170.0 => c.green,
+        h if h < 260.0 => c.blue,
+        _ => c.purple,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::css::applied_palette_id;
+    use crate::palette::bundled;
+
+    fn palette(id: &str) -> Palette {
+        bundled().into_iter().find(|p| p.id == id).unwrap()
+    }
+
+    #[test]
+    fn maps_ramp_ends_accent_and_alpha() {
+        let mocha = palette("catppuccin-mocha");
+        let css = shell(
+            &mocha,
+            "#panel { background-color: #000000; color: #fafafb; }\n\
+             .a { color: -st-accent-color; border-color: rgba(250, 250, 251, 0.4); }\n\
+             .b { color: -st-accent-fg-color; }\n",
+        );
+        assert_eq!(applied_palette_id(&css), Some("catppuccin-mocha"));
+        assert!(css.contains("#panel { background-color: #11111b; color: #cdd6f4; }"));
+        assert!(css.contains(".a { color: #cba6f7; border-color: rgba(205, 214, 244, 0.4); }"));
+        assert!(css.contains(".b { color: #11111b; }"));
+    }
+
+    #[test]
+    fn leaves_selectors_comments_and_urls_alone() {
+        let mocha = palette("catppuccin-mocha");
+        let source = "#add:hover, .white { color: #c01c28; } /* #ffffff */\n\
+                      .c { background-image: url(\"resource:///x/#bad.svg\"); }\n";
+        let out = recolor(&mocha, source);
+        assert!(out.starts_with("#add:hover, .white { color: #f38ba8; } /* #ffffff */"));
+        assert!(out.contains("url(\"resource:///x/#bad.svg\")"));
+    }
+
+    #[test]
+    fn maps_colors_inside_st_functions_and_named_colors() {
+        let latte = palette("catppuccin-latte");
+        let out = recolor(
+            &latte,
+            ".d { color: st-mix(#fafafb, #222226, 9%); background: white; }",
+        );
+        assert_eq!(
+            out,
+            ".d { color: st-mix(#eff1f5, #4c4f69, 9%); background: #f7f8fa; }"
+        );
+    }
+
+    #[test]
+    fn adwaita_accents_land_on_matching_palette_colors() {
+        let mocha = palette("catppuccin-mocha");
+        let c = &mocha.colors;
+        let hex = |s: &str| Color::from_hex(s).unwrap();
+        assert_eq!(map(hex("#cd9309"), &mocha), c.yellow);
+        assert_eq!(map(hex("#ff7800"), &mocha), c.orange);
+        assert_eq!(map(hex("#c01c28"), &mocha), c.red);
+        assert_eq!(map(hex("#3584e4"), &mocha), c.blue);
+        assert_eq!(map(hex("#2ec27e"), &mocha), c.green);
+    }
+}

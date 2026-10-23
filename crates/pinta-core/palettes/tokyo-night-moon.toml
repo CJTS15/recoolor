@@ -17,4 +17,10 @@ orange = "#ff966c"
 yellow = "#ffc777"
 green = "#c3e88d"
 blue = "#82aaff"
+teal = "#4fd6be"
 purple = "#c099ff"
+pink = "#ff007c"
+
+# Same theme as shipped for other apps, used when installed.
+[apps]
+ptyxis = "Tokyo Night Moon"

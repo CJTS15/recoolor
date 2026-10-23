@@ -1,0 +1,29 @@
+id = "solarized-dark"
+name = "Solarized Dark"
+family = "Solarized"
+variant = "dark"
+
+# mantle and crust are derived.
+
+[colors]
+base = "#002b36"
+mantle = "#00252f"
+crust = "#001e26"
+surface = "#073642"
+overlay = "#586e75"
+text = "#839496"
+subtext = "#657b83"
+accent = "#268bd2"
+red = "#dc322f"
+orange = "#cb4b16"
+yellow = "#b58900"
+green = "#859900"
+blue = "#268bd2"
+teal = "#2aa198"
+purple = "#6c71c4"
+pink = "#d33682"
+
+# Same theme as shipped for other apps, used when installed.
+[apps]
+ptyxis = "solarized"
+fish = ["solarized"]

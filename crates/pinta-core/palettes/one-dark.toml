@@ -1,0 +1,23 @@
+id = "one-dark"
+name = "One Dark"
+family = "One"
+variant = "dark"
+
+# crust is derived; One Dark has no pink, so Pinta mixes one.
+
+[colors]
+base = "#282c34"
+mantle = "#21252b"
+crust = "#1b1f23"
+surface = "#3e4451"
+overlay = "#5c6370"
+text = "#abb2bf"
+subtext = "#828997"
+accent = "#61afef"
+red = "#e06c75"
+orange = "#d19a66"
+yellow = "#e5c07b"
+green = "#98c379"
+blue = "#61afef"
+teal = "#56b6c2"
+purple = "#c678dd"

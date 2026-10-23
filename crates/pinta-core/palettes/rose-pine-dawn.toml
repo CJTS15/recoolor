@@ -1,0 +1,28 @@
+id = "rose-pine-dawn"
+name = "Rosé Pine Dawn"
+family = "Rosé Pine"
+variant = "light"
+
+# Pine and gold stand in for green and orange, as in Gogh.
+
+[colors]
+base = "#faf4ed"
+mantle = "#fffaf3"
+crust = "#f2e9e1"
+surface = "#f2e9e1"
+overlay = "#9893a5"
+text = "#575279"
+subtext = "#797593"
+accent = "#907aa9"
+red = "#b4637a"
+orange = "#ea9d34"
+yellow = "#ea9d34"
+green = "#286983"
+blue = "#56949f"
+teal = "#56949f"
+purple = "#907aa9"
+pink = "#d7827e"
+
+# Same theme as shipped for other apps, used when installed.
+[apps]
+ptyxis = "Rosé Pine Dawn"

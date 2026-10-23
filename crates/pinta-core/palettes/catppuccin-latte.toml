@@ -17,4 +17,11 @@ orange = "#fe640b"
 yellow = "#df8e1d"
 green = "#40a02b"
 blue = "#1e66f5"
+teal = "#179299"
 purple = "#8839ef"
+pink = "#ea76cb"
+
+# Same theme as shipped for other apps, used when installed.
+[apps]
+ptyxis = "Catppuccin Latte"
+fish = ["Catppuccin Latte"]

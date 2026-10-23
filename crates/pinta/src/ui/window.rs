@@ -4,17 +4,20 @@
 //! that Apply would write into a display-wide provider.
 
 use std::cell::Cell;
-use std::path::PathBuf;
 use std::rc::Rc;
 
 use adw::prelude::*;
 use gtk::gdk;
+use pinta_core::apps::slack;
 use pinta_core::palette::{self, Palette, Variant};
 use pinta_core::{ApplyError, CssState, GtkConfig, RestoreOutcome, Status, Toolkit, css, paths};
 
+use super::extras::ExtrasRows;
 use super::palette_card::PaletteCard;
 use super::preview;
-use crate::{desktop, log};
+use crate::desktop::{self, Dirs};
+use crate::log;
+use crate::targets::{self, Choice};
 
 // The window lives as long as the app, so handlers hold it strongly.
 struct Window {
@@ -33,9 +36,14 @@ struct Window {
     dark_row: adw::ComboRow,
     apply: gtk::Button,
     style: adw::StyleManager,
+    /// GNOME's interface settings, for the accent picked in Settings.
+    interface: Option<gtk::gio::Settings>,
     preview: gtk::CssProvider,
     previewing: Cell<bool>,
-    config_home: Option<PathBuf>,
+    /// Counts palette changes, so only the last one ends the color fade.
+    fading: Rc<Cell<u32>>,
+    extras: ExtrasRows,
+    dirs: Option<Dirs>,
 }
 
 pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
@@ -43,7 +51,7 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     for e in &errors {
         log::error(&format!("skipped palette {e}"));
     }
-    let config_home = desktop::config_home().ok();
+    let dirs = Dirs::find().ok();
 
     let title = adw::WindowTitle::new("Pinta", "");
     let apply = gtk::Button::builder()
@@ -54,7 +62,7 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     let reset = gtk::Button::builder()
         .label("Reset")
         .tooltip_text("Remove Pinta's styles and bring back what you had before")
-        .sensitive(config_home.is_some())
+        .sensitive(dirs.is_some())
         .build();
     let show_all = gtk::ToggleButton::builder()
         .label("Show All")
@@ -67,9 +75,9 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
 
     let no_config = adw::Banner::builder()
         .title(
-            "Cannot find your config folder. Set HOME or XDG_CONFIG_HOME, then open Pinta again.",
+            "Cannot find your home folders. Set HOME or the XDG_*_HOME variables, then open Pinta again.",
         )
-        .revealed(config_home.is_none())
+        .revealed(dirs.is_none())
         .build();
     let broken = adw::Banner::builder()
         .title(format!(
@@ -84,8 +92,8 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     let grid = gtk::FlowBox::builder()
         .selection_mode(gtk::SelectionMode::Single)
         .homogeneous(true)
-        .min_children_per_line(1)
-        .max_children_per_line(4)
+        .min_children_per_line(2)
+        .max_children_per_line(2)
         .row_spacing(12)
         .column_spacing(12)
         .margin_top(12)
@@ -140,7 +148,13 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         .margin_start(12)
         .margin_end(12)
         .build();
+    let extras = ExtrasRows::new(dirs.as_ref());
+    if let Some(dirs) = &dirs {
+        extras.set(&targets::current(dirs));
+    }
     side.append(&pair_group);
+    side.append(&extras.group);
+    side.append(&extras.apps_group);
     side.append(&preview::build());
 
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -180,6 +194,25 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     // preview before the user picks anything.
     GtkWindowExt::set_focus(&window, Some(&show_all));
 
+    // Colors fade while the `fading` class is on the window. Only then, so the
+    // transition does not replace libadwaita's own ones the rest of the time.
+    // The selected card shows through the preview, so it needs no highlight; the
+    // keyboard focus ring stays.
+    let fade = gtk::CssProvider::new();
+    fade.load_from_string(
+        "window.fading, window.fading * { transition: background-color 400ms ease-out, \
+         color 400ms ease-out, border-color 400ms ease-out, box-shadow 400ms ease-out, \
+         outline-color 400ms ease-out; }\n\
+         flowboxchild:selected { background: none; }",
+    );
+    if let Some(display) = gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &fade,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+
     let preview = gtk::CssProvider::new();
     // A new provider evaluates `prefers-color-scheme` as light (GTK 4.20+); follow
     // the desktop instead, so a pair previews its dark half in dark style.
@@ -211,9 +244,12 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         dark_row: dark_row.clone(),
         apply: apply.clone(),
         style: adw::StyleManager::default(),
+        interface: desktop::interface_settings(),
         preview,
         previewing: Cell::new(false),
-        config_home,
+        fading: Rc::new(Cell::new(0)),
+        extras,
+        dirs,
     });
 
     // Start from what is on disk, before any handler can turn it into a preview.
@@ -232,6 +268,10 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     let w = win.clone();
     win.style
         .connect_dark_notify(move |_| w.grid.invalidate_filter());
+    if let Some(interface) = &win.interface {
+        let w = win.clone();
+        interface.connect_changed(Some("accent-color"), move |_, _| w.update_preview());
+    }
 
     let w = win.clone();
     grid.connect_selected_children_changed(move |_| w.on_card_selected());
@@ -242,6 +282,10 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         row.connect_selected_notify(move |_| w.update_preview());
     }
 
+    let w = win.clone();
+    win.extras
+        .slack
+        .connect_clicked(move |_| w.show_slack_colors());
     let w = win.clone();
     apply.connect_clicked(move |_| w.on_apply());
     let w = win.clone();
@@ -255,12 +299,19 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     let w = win.clone();
     broken.connect_button_clicked(move |_| w.alert("Palettes that were skipped", &details));
 
+    // Select the applied palette, so Apply works for changing only the extras.
+    if let Some(CssState::Pinta(id)) = gtk4_state(&statuses) {
+        if let Some(card) = win.palettes.iter().position(|p| &p.id == id) {
+            grid.select_child(&win.cards[card].child);
+        }
+    }
+
     window
 }
 
 impl Window {
     fn gtk_config(&self) -> Option<GtkConfig> {
-        self.config_home.clone().map(GtkConfig::new)
+        self.dirs.as_ref().map(|d| GtkConfig::new(&d.config))
     }
 
     fn selected(&self) -> Option<&Palette> {
@@ -313,10 +364,14 @@ impl Window {
 
     /// Previews whatever Apply would write, or nothing.
     fn update_preview(&self) {
+        // Preview with the palette color matching the accent picked in Settings.
+        let accent = self.interface.as_ref().and_then(desktop::accent_choice);
+        let tint = |p: &Palette| p.with_accent(accent.as_deref());
         let css = if self.pair.is_active() {
-            self.pair_choice().map(|(l, d)| css::gtk4_pair(l, d))
+            self.pair_choice()
+                .map(|(l, d)| css::gtk4_pair(&tint(l), &tint(d)))
         } else {
-            self.selected().map(|p| Toolkit::Gtk4.render(p))
+            self.selected().map(|p| Toolkit::Gtk4.render(&tint(p)))
         };
         self.set_preview(css.as_deref());
         self.update_apply();
@@ -328,14 +383,14 @@ impl Window {
         } else {
             self.selected().is_some()
         };
-        self.apply
-            .set_sensitive(ready && self.config_home.is_some());
+        self.apply.set_sensitive(ready && self.dirs.is_some());
     }
 
     fn set_preview(&self, css: Option<&str>) {
         let Some(display) = gdk::Display::default() else {
             return;
         };
+        self.fade_colors();
         match css {
             Some(css) => {
                 self.preview.load_from_string(css);
@@ -356,36 +411,97 @@ impl Window {
         }
     }
 
-    fn on_apply(&self) {
-        let (Some(cfg), Some(home)) = (self.gtk_config(), self.config_home.as_deref()) else {
+    /// Turns the color transitions on for a moment around a palette change.
+    fn fade_colors(&self) {
+        let generation = self.fading.get() + 1;
+        self.fading.set(generation);
+        self.window.add_css_class("fading");
+        let (window, fading) = (self.window.clone(), self.fading.clone());
+        gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(600), move || {
+            if fading.get() == generation {
+                window.remove_css_class("fading");
+            }
+        });
+    }
+
+    /// The palette in view, tinted with the accent picked in Settings: the selected
+    /// card, else the pair's current half, else what is applied.
+    fn shown_palette(&self) -> Option<Palette> {
+        let accent = self.interface.as_ref().and_then(desktop::accent_choice);
+        let dark = self.style.is_dark();
+        let in_view = if self.pair.is_active() {
+            self.pair_choice().map(|(l, d)| if dark { d } else { l })
+        } else {
+            self.selected()
+        };
+        let palette = in_view.or_else(|| {
+            let statuses = self.gtk_config()?.status().ok()?;
+            let id = match gtk4_state(&statuses)? {
+                CssState::Pinta(id) => id.clone(),
+                CssState::PintaPair { light, dark: d } => {
+                    if dark {
+                        d.clone()
+                    } else {
+                        light.clone()
+                    }
+                }
+                CssState::Missing | CssState::Foreign => return None,
+            };
+            self.palettes.iter().find(|p| p.id == id)
+        })?;
+        Some(palette.with_accent(accent.as_deref()))
+    }
+
+    fn show_slack_colors(&self) {
+        let Some(palette) = self.shown_palette() else {
+            self.toast("Pick a palette first");
             return;
         };
-        let (result, applied, follow) = if self.pair.is_active() {
+        let lines = slack::colors(&palette)
+            .iter()
+            .map(|(name, color)| format!("{name}: {color}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let dialog = adw::AlertDialog::new(
+            Some(&format!("Slack Colors for {}", palette.name)),
+            Some(&format!(
+                "Enter these in Slack → Preferences → Themes → Custom theme:\n\n{lines}\n\nCopy puts all four on the clipboard, comma-separated, the way Slack shares a theme."
+            )),
+        );
+        dialog.add_responses(&[("close", "Close"), ("copy", "Copy")]);
+        dialog.set_response_appearance("copy", adw::ResponseAppearance::Suggested);
+        let theme = slack::theme_string(&palette);
+        let window = self.window.clone();
+        dialog.connect_response(Some("copy"), move |_, _| {
+            window.clipboard().set_text(&theme)
+        });
+        dialog.present(Some(&self.window));
+    }
+
+    fn on_apply(&self) {
+        let Some(dirs) = &self.dirs else {
+            return;
+        };
+        let choice = if self.pair.is_active() {
             let Some((light, dark)) = self.pair_choice() else {
                 return;
             };
-            (
-                cfg.apply_pair(light, dark, self.style.is_dark()),
-                format!("{} and {}", light.name, dark.name),
-                true,
-            )
+            Choice::Pair { light, dark }
         } else {
             let Some(p) = self.selected() else {
                 return;
             };
-            (cfg.apply(p), p.name.clone(), false)
+            Choice::Single(p)
         };
 
-        match result {
-            Ok(()) => {
-                self.toast(&format!("Applied {applied}. Restart apps to see it."));
-                if let Err(e) = desktop::set_watch(home, follow) {
-                    let heading = if follow {
-                        "GTK3 apps will not follow the style switch"
-                    } else {
-                        "Could not stop pinta watch"
-                    };
-                    self.alert(heading, &e);
+        match targets::apply(dirs, choice, &self.extras.get(), self.style.is_dark()) {
+            Ok(problems) => {
+                self.toast(&format!(
+                    "Applied {}. Restart apps to see it.",
+                    choice.name()
+                ));
+                if !problems.is_empty() {
+                    self.alert("Some parts were not applied", &problems.join("\n\n"));
                 }
             }
             Err(e @ ApplyError::BackupExists { .. }) => {
@@ -393,23 +509,25 @@ impl Window {
             }
             Err(e) => self.alert("Could not apply", &e.to_string()),
         }
+        self.extras.set(&targets::current(dirs));
         self.refresh();
     }
 
     fn on_reset(&self) {
-        let (Some(cfg), Some(home)) = (self.gtk_config(), self.config_home.as_deref()) else {
+        let Some(dirs) = &self.dirs else {
             return;
         };
-        match cfg.restore() {
-            Ok(outcomes) => self.toast(&reset_summary(&outcomes)),
-            Err(e) => self.alert("Could not reset", &e.to_string()),
+        let (outcomes, problems) = targets::reset(dirs);
+        if !outcomes.is_empty() {
+            self.toast(&reset_summary(&outcomes));
         }
-        if let Err(e) = desktop::set_watch(home, false) {
-            self.alert("Could not stop pinta watch", &e);
+        if !problems.is_empty() {
+            self.alert("Some parts were not reset", &problems.join("\n\n"));
         }
         self.grid.unselect_all();
         self.pair.set_active(false);
         self.set_preview(None);
+        self.extras.set(&targets::current(dirs));
         self.refresh();
     }
 
