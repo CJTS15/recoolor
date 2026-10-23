@@ -1,7 +1,7 @@
 //! Recoolor command line.
 
 use recoolor_core::palette::{self, Palette, Variant};
-use recoolor_core::{CssState, GtkConfig, RestoreOutcome, Toolkit, css, paths, shell};
+use recoolor_core::{CssState, GtkConfig, RestoreOutcome, Toolkit, paths, shell};
 
 use crate::desktop::{self, Dirs};
 use crate::targets::{self, Choice};
@@ -43,10 +43,7 @@ pub fn run(args: &[&str]) -> Result<(), String> {
         }
         ["show", id, "shell"] => {
             let palette = find(id)?;
-            print!(
-                "{}",
-                css::shell(&palette, &desktop::shell_default_css(palette.variant)?)
-            );
+            print!("{}", desktop::shell_css(&palette, &Dirs::find()?.data)?);
             Ok(())
         }
         ["apply", id] => apply(Choice::Single(&find(id)?)),
