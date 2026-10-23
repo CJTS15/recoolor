@@ -448,7 +448,18 @@ fn set_vscode(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resu
 pub fn watch(dirs: Dirs) -> Result<(), String> {
     let settings =
         desktop::interface_settings().ok_or("GNOME's interface settings are not installed")?;
+    // GSettings also reports a key as changed when others in the same folder change
+    // (such as the cursor Recoolor sets itself), so only act on a real change.
+    let last = std::cell::RefCell::new(None);
     let sync = move |settings: &gio::Settings| {
+        let now = (
+            desktop::prefers_dark(settings),
+            desktop::accent_choice(settings),
+        );
+        if last.borrow().as_ref() == Some(&now) {
+            return;
+        }
+        *last.borrow_mut() = Some(now);
         if let Err(e) = sync(&dirs, settings) {
             log::error(&format!("recoolor watch: {e}"));
             eprintln!("recoolor watch: {e}");
