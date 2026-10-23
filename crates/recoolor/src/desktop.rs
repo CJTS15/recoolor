@@ -8,7 +8,7 @@ use gtk::gio;
 use gtk::gio::prelude::*;
 use gtk::glib;
 use recoolor_core::apps::shell_fade;
-use recoolor_core::{Variant, paths, service, shell};
+use recoolor_core::{Palette, Variant, css, paths, service, shell};
 
 const INTERFACE_SCHEMA: &str = "org.gnome.desktop.interface";
 const USER_THEME_SCHEMA: &str = "org.gnome.shell.extensions.user-theme";
@@ -349,6 +349,20 @@ pub fn vscode_installed(config_home: &Path) -> bool {
 
 pub fn home() -> Result<PathBuf, String> {
     std::env::home_dir().ok_or_else(|| "cannot find your home folder".to_owned())
+}
+
+/// The Shell theme for `palette`: the installed Shell's stylesheet recolored, plus
+/// Blur my Shell's translucent popup rules when it is installed.
+pub fn shell_css(palette: &Palette, data_home: &Path) -> Result<String, String> {
+    let mut css = css::shell(palette, &shell_default_css(palette.variant)?);
+    let bms = std::iter::once(data_home.to_owned())
+        .chain(glib::system_data_dirs())
+        .map(|d| d.join("gnome-shell/extensions/blur-my-shell@aunetx/stylesheet.css"))
+        .find_map(|p| std::fs::read_to_string(p).ok());
+    if let Some(bms) = bms {
+        css.push_str(&css::shell_blur(palette, &bms));
+    }
+    Ok(css)
 }
 
 pub fn flatpak_installed() -> bool {

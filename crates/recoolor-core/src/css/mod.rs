@@ -6,7 +6,7 @@ mod shell;
 
 pub use gtk3::gtk3;
 pub use gtk4::{gtk4, gtk4_pair};
-pub use shell::shell;
+pub use shell::{shell, shell_blur};
 
 use crate::color::Color;
 use crate::palette::{Palette, Variant};

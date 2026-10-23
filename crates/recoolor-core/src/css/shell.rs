@@ -27,6 +27,60 @@ pub fn shell(palette: &Palette, default_css: &str) -> String {
     header(&palette.id) + &recolor(palette, pristine(default_css))
 }
 
+/// Blur my Shell's "Preserve shell theme" mode keeps the theme's own solid colors
+/// inside its blurred popups; its other mode makes the inner elements (calendar
+/// days, cards, quick toggles) translucent so the blur shows through. This takes
+/// those rules from the installed Blur my Shell's `stylesheet.css`, moves them to
+/// the classes it uses in preserve mode, and recolors them through the palette,
+/// with accent fills translucent too. Without Blur my Shell the classes never
+/// apply, so the result is harmless.
+pub fn shell_blur(palette: &Palette, bms_css: &str) -> String {
+    let mut css = String::new();
+    for variant in ["dark", "light"] {
+        let (from, to) = (
+            format!(".bms-popup-background-{variant} "),
+            format!(".bms-popup-surface-{variant} "),
+        );
+        // BMS already styles these in preserve mode; leave them to it.
+        let own: Vec<&str> = rules(bms_css)
+            .flat_map(|(sels, _)| sels.split(','))
+            .filter_map(|s| s.trim().strip_prefix(to.as_str()))
+            .collect();
+        for (sels, body) in rules(bms_css) {
+            let moved: Vec<String> = sels
+                .split(',')
+                .filter_map(|s| s.trim().strip_prefix(from.as_str()))
+                .filter(|inner| !own.contains(inner))
+                .map(|inner| format!("{to}{inner}"))
+                .collect();
+            if !moved.is_empty() {
+                let body = body.replace(
+                    "background-color: -st-accent-color",
+                    "background-color: st-transparentize(-st-accent-color, 0.25)",
+                );
+                css.push_str(&format!("{} {{{body}}}\n", moved.join(",\n")));
+            }
+        }
+    }
+    if css.is_empty() {
+        return css;
+    }
+    format!(
+        "\n/* Blur my Shell, preserve-theme mode: translucent inner elements. */\n{}",
+        recolor(palette, &css)
+    )
+}
+
+/// `(selectors, body)` of each top-level rule; Blur my Shell's sheet has no nesting.
+fn rules(css: &str) -> impl Iterator<Item = (&str, &str)> {
+    css.split('}').filter_map(|rule| {
+        let (sels, body) = rule.split_once('{')?;
+        // Drop comments in front of the selectors.
+        let sels = sels.rsplit("*/").next().unwrap_or(sels).trim();
+        Some((sels, body))
+    })
+}
+
 /// GDM Settings rebuilds the system stylesheet as the original followed by the
 /// chosen theme, so after it has used Recoolor's (or Pinta's) theme the original
 /// ends at the first generated marker. Recoloring past it would recolor colors
@@ -195,6 +249,24 @@ mod tests {
 
     fn palette(id: &str) -> Palette {
         bundled().into_iter().find(|p| p.id == id).unwrap()
+    }
+
+    #[test]
+    fn moves_blur_my_shell_rules_to_preserve_mode() {
+        let mocha = palette("catppuccin-mocha");
+        let bms = "/* popups */\n\
+            .bms-popup-surface-dark .quick-settings { background: rgba(30, 30, 33, 0.5); }\n\
+            .bms-popup-background-dark .quick-settings,\n\
+            .bms-popup-background-dark .quick-toggle { background-color: rgba(255, 255, 255, 0.1); }\n\
+            .bms-popup-background-dark .quick-toggle:checked { background-color: -st-accent-color !important; }\n";
+        let css = shell_blur(&mocha, bms);
+        // Inner element moved and recolored; the container is left to Blur my Shell.
+        assert!(css.contains(
+            ".bms-popup-surface-dark .quick-toggle { background-color: rgba(205, 214, 244, 0.1); }"
+        ));
+        assert!(!css.contains("surface-dark .quick-settings"));
+        assert!(css.contains("background-color: st-transparentize(#cba6f7, 0.25) !important;"));
+        assert_eq!(shell_blur(&mocha, ""), "");
     }
 
     #[test]

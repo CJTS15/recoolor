@@ -13,7 +13,7 @@ use recoolor_core::apps::{self, firefox, fish, ptyxis, shell_fade, spotifast, vs
 use recoolor_core::palette::{self, Palette};
 use recoolor_core::state::{self, State};
 use recoolor_core::{
-    ApplyError, CssState, GtkConfig, RestoreOutcome, Toolkit, css, flatpak, paths, shell,
+    ApplyError, CssState, GtkConfig, RestoreOutcome, Toolkit, flatpak, paths, shell,
 };
 
 use crate::desktop::{self, Dirs};
@@ -281,7 +281,7 @@ fn set_shell(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resul
     if !desktop::user_theme_enabled() {
         return Err("turn on the User Themes extension (in Extensions) first".into());
     }
-    let css = css::shell(palette, &desktop::shell_default_css(palette.variant)?);
+    let css = desktop::shell_css(palette, &dirs.data)?;
     let changed = std::fs::read_to_string(shell::css_path(&dirs.data)).ok() != Some(css.clone());
     shell::write(&dirs.data, &css).map_err(|e| e.to_string())?;
     let name = settings.string("name").to_string();
