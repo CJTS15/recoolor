@@ -1,20 +1,20 @@
-# Pinta
+# Recoolor
 
 A theme switcher for GNOME. Pick a palette (Catppuccin, Dracula, Tokyo Night, …)
-and Pinta recolors GTK3 and GTK4/libadwaita apps by generating the user stylesheets
+and Recoolor recolors GTK3 and GTK4/libadwaita apps by generating the user stylesheets
 GTK loads from `~/.config/gtk-3.0/gtk.css` and `~/.config/gtk-4.0/gtk.css`.
 
-Run `pinta` to open the window: pick a card to preview it on Pinta itself, then
-Apply. Reset undoes everything Pinta changed. The same things work from the
+Run `recoolor` to open the window: pick a card to preview it on Recoolor itself, then
+Apply. Reset undoes everything Recoolor changed. The same things work from the
 command line:
 
 ```sh
-pinta list                                     # bundled and user palettes
-pinta show catppuccin-mocha                    # print the GTK4 CSS (add `gtk3` for GTK3)
-pinta apply catppuccin-mocha                   # write both stylesheets
-pinta apply catppuccin-latte catppuccin-mocha  # a light/dark pair
-pinta status
-pinta restore                                  # undo
+recoolor list                                     # bundled and user palettes
+recoolor show catppuccin-mocha                    # print the GTK4 CSS (add `gtk3` for GTK3)
+recoolor apply catppuccin-mocha                   # write both stylesheets
+recoolor apply catppuccin-latte catppuccin-mocha  # a light/dark pair
+recoolor status
+recoolor restore                                  # undo
 ```
 
 Apps read `gtk.css` once at startup, so restart them after applying. Files
@@ -26,68 +26,78 @@ Requires GNOME 47 or newer (GTK 4.16, libadwaita 1.6).
 
 ## Install
 
-Build dependencies: `gtk4-devel libadwaita-devel` (Fedora) or
-`libgtk-4-dev libadwaita-1-dev` (Debian/Ubuntu), plus a Rust toolchain.
+**Fedora:** download the `recoolor-<version>.rpm` from the
+[latest release](https://github.com/CJTS15/recoolor/releases/latest), then:
 
 ```sh
-cargo install --path crates/pinta
-install -Dm644 data/io.github.cjts15.Pinta.desktop -t ~/.local/share/applications
-install -Dm644 data/icons/hicolor/scalable/apps/io.github.cjts15.Pinta.svg \
-  -t ~/.local/share/icons/hicolor/scalable/apps
-install -Dm644 data/icons/hicolor/symbolic/apps/io.github.cjts15.Pinta-symbolic.svg \
-  -t ~/.local/share/icons/hicolor/symbolic/apps
+sudo dnf install ./recoolor-*.rpm
 ```
 
-The desktop file runs `pinta` from your `PATH`, so `~/.cargo/bin` must be on it.
+**From source:** needs `gtk4-devel libadwaita-devel` (Fedora) or
+`libgtk-4-dev libadwaita-1-dev` (Debian/Ubuntu), and a Rust toolchain.
+
+```sh
+make build
+sudo make install            # into /usr/local
+make install PREFIX=~/.local # or just for you; ~/.local/bin must be on PATH
+```
+
+To build the RPM yourself, install `rpm-build desktop-file-utils appstream` and
+run `packaging/build-rpm.sh`; it builds from the committed tree into
+`target/rpmbuild`.
+
+**Uninstall:** run `recoolor restore` (or Reset in the window) first, so
+everything Recoolor changed is put back, then `sudo dnf remove recoolor` or
+`sudo make uninstall`.
 
 ## Light and dark
 
-Turn on **Follow System Style** (or run `pinta apply <light> <dark>`) to use one
+Turn on **Follow System Style** (or run `recoolor apply <light> <dark>`) to use one
 palette in light style and another in dark. GTK4 and libadwaita apps switch by
 themselves through a `prefers-color-scheme` media query; GTK3 and the Shell are
-switched by `pinta watch` (below).
+switched by `recoolor watch` (below).
 
 ## Accent color
 
 The accent you pick in Settings → Appearance chooses among the palette's own
 colors: Blue gives the palette's blue, Teal its teal, Pink its pink, and so on
 (Slate gives its muted grey). Until you pick one, the palette's own accent is used,
-such as Catppuccin's mauve. Pinta never changes the setting itself; to go back to
+such as Catppuccin's mauve. Recoolor never changes the setting itself; to go back to
 the palette's own accent, run `gsettings reset org.gnome.desktop.interface accent-color`.
 The swatches in Settings keep GNOME's shades; apps and the Shell get the palette's.
 
 ## Keeping up with GNOME
 
-Every apply starts a small user service, `pinta-watch.service`, and Reset stops and
-removes it. It rewrites Pinta's files when you switch light/dark (for a pair) or
+Every apply starts a small user service, `recoolor-watch.service`, and Reset stops and
+removes it. It rewrites Recoolor's files when you switch light/dark (for a pair) or
 pick another accent, and reloads the Shell theme. Apps opened afterwards get the
 change; apps already open keep what they loaded, since GTK reads `gtk.css` only at
 startup (checked on GTK 4.22: neither a light/dark nor a theme switch re-reads
 it). GTK4 apps still follow a pair's light/dark switch live through the media
-query. The service runs the `pinta` binary you applied from, so apply again
+query. The service runs the `recoolor` binary you applied from, so apply again
 after moving it.
 
 ## Layout
 
-- `crates/pinta-core`: the engine, with no GTK dependency. Palettes, CSS
+- `crates/recoolor-core`: the engine, with no GTK dependency. Palettes, CSS
   generation, and apply/restore.
-- `crates/pinta-core/palettes`: bundled palettes, compiled in.
-- `crates/pinta`: the app: the window (`src/ui`), the command line (`src/cli.rs`),
+- `crates/recoolor-core/palettes`: bundled palettes, compiled in.
+- `crates/recoolor`: the app: the window (`src/ui`), the command line (`src/cli.rs`),
   and the systemd and GNOME settings glue (`src/desktop.rs`).
 - `data`: desktop file, AppStream metadata and icons.
 
 ## Palettes
 
-Each palette is a TOML file of semantic roles (see `crates/pinta-core/palettes`).
-Drop your own into `~/.local/share/pinta/palettes/`; one with the same `id` as a
+Each palette is a TOML file of semantic roles (see `crates/recoolor-core/palettes`).
+Drop your own into `~/.local/share/recoolor/palettes/`; one with the same `id` as a
 bundled palette replaces it.
 
 ## Your existing gtk.css is safe
 
-On the first apply, a `gtk.css` Pinta did not write is renamed to
-`gtk.css.pinta-backup` next to it (symlinks stay symlinks). Later applies only
-overwrite Pinta's own file, which starts with a `/* Generated by Pinta` line.
-`restore` deletes Pinta's file and moves the backup back. Pinta refuses to apply
+On the first apply, a `gtk.css` Recoolor did not write is renamed to
+`gtk.css.recoolor-backup` next to it (symlinks stay symlinks). Later applies only
+overwrite Recoolor's own file, which starts with a `/* Generated by Recoolor` line.
+`restore` deletes Recoolor's file and moves the backup back. Recoolor refuses to apply
 rather than overwrite an older backup, and never deletes a `gtk.css` it did not write.
 
 ## Coverage
@@ -103,61 +113,61 @@ rather than overwrite an older backup, and never deletes a `gtk.css` it did not 
 
 ## Beyond GTK apps
 
-The window's **Also Apply To** group turns these on; `pinta apply` keeps whichever
-are on, and Reset or `pinta restore` undoes all of them. Pinta records the values
-it replaced in `~/.local/state/pinta/state.toml` and puts back the ones you had
-before Pinta, not an earlier Pinta choice.
+The window's **Also Apply To** group turns these on; `recoolor apply` keeps whichever
+are on, and Reset or `recoolor restore` undoes all of them. Recoolor records the values
+it replaced in `~/.local/state/recoolor/state.toml` and puts back the ones you had
+before Recoolor, not an earlier Recoolor choice.
 
-- **Flatpak apps** cannot see `~/.config/gtk-{3,4}.0` unless granted. Pinta adds
+- **Flatpak apps** cannot see `~/.config/gtk-{3,4}.0` unless granted. Recoolor adds
   read-only grants to `~/.local/share/flatpak/overrides/global` (what
   `flatpak override --user` writes) and later removes only those. If a grant or
   a deny is already there, including a system-wide one in
-  `/var/lib/flatpak/overrides/global`, Pinta leaves it as it is.
-- **GNOME Shell** needs the User Themes extension, turned on. Pinta takes the
+  `/var/lib/flatpak/overrides/global`, Recoolor leaves it as it is.
+- **GNOME Shell** needs the User Themes extension, turned on. Recoolor takes the
   installed Shell's own stylesheet and recolors it: greys follow the palette
   from background to text, colors map to the palette's nearest hue, and the
   accent becomes the palette's. It is written to
-  `~/.local/share/themes/Pinta/gnome-shell/gnome-shell.css` and selected in the
+  `~/.local/share/themes/Recoolor/gnome-shell/gnome-shell.css` and selected in the
   extension. Built against GNOME Shell 50; because it starts from the installed
   stylesheet, apply again after a GNOME upgrade. A light/dark pair switches the
-  Shell too, through `pinta watch`.
+  Shell too, through `recoolor watch`.
 - **Icons** and **cursors** pick any theme installed in `~/.local/share/icons`,
   `~/.icons` or `/usr/share/icons`. Flatpak apps only use a host icon theme
-  that is also installed for Flatpak; Pinta does not change that.
+  that is also installed for Flatpak; Recoolor does not change that.
 
 ## Apps
 
 The window's **Apps** group themes a few apps from the same palette. Each writes a
-file starting with "Generated by Pinta", and Reset removes it and puts back what
+file starting with "Generated by Recoolor", and Reset removes it and puts back what
 the app used before.
 
-- **Ptyxis** (GNOME's terminal): a `Pinta` palette in
+- **Ptyxis** (GNOME's terminal): a `Recoolor` palette in
   `~/.local/share/org.gnome.Ptyxis/palettes/`, selected in the default profile.
   Its 16 colors follow Gogh's layout, so they match Ptyxis's built-in palettes.
   A light/dark pair switches inside Ptyxis.
-- **fish**: `~/.config/fish/conf.d/pinta.fish` sets the syntax colors. It loads
+- **fish**: `~/.config/fish/conf.d/recoolor.fish` sets the syntax colors. It loads
   after fish's own `fish_frozen_theme.fish`, so it wins without touching your
   theme files. New shells get it.
-- **VS Code**: a local "Pinta Dark"/"Pinta Light" theme extension in
+- **VS Code**: a local "Recoolor Dark"/"Recoolor Light" theme extension in
   `~/.vscode/extensions`, selected through `workbench.colorTheme` in your
   `settings.json`. Only that one value changes (or one line is added); comments
   and other settings stay as they are.
-- **Firefox**: `chrome/pinta.css` in each profile sets the color variables of
+- **Firefox**: `chrome/recoolor.css` in each profile sets the color variables of
   firefox-gnome-theme (`--gnome-*`) and Catppuccin-style userChrome files
   (`--ctp-*`), loaded by one marked `@import` line in `userChrome.css`. Your own
   files stay as they are. Needs `toolkit.legacyUserProfileCustomizations.stylesheets`;
   restart Firefox to see a change.
-- **Spotifast**: a `Pinta.json` custom theme in its themes folder. Pick "Pinta"
+- **Spotifast**: a `Recoolor.json` custom theme in its themes folder. Pick "Recoolor"
   once in Spotifast's appearance settings; it then updates live.
 - **Chrome**: choose the GTK theme in Chrome's appearance settings and it uses
-  Pinta's GTK colors; restart Chrome after applying.
+  Recoolor's GTK colors; restart Chrome after applying.
 - **Slack** keeps its theme in your Slack account, which no other app can set.
   **Colors** shows the four colors Slack's custom theme asks for (system
   navigation, selected items, presence, notifications), with Copy.
-- **Login screen** (GDM): needs root, so Pinta leaves it to GDM Settings, which
+- **Login screen** (GDM): needs root, so Recoolor leaves it to GDM Settings, which
   only lists system themes. **Copy Command** gives the one-time `sudo` command that
-  links Pinta's theme into `/usr/local/share/themes`; then, with the GNOME Shell
-  switch on, pick "Pinta" in GDM Settings. It copies the theme, so pick it again
+  links Recoolor's theme into `/usr/local/share/themes`; then, with the GNOME Shell
+  switch on, pick "Recoolor" in GDM Settings. It copies the theme, so pick it again
   after changing palettes.
 
 ## License
@@ -172,10 +182,10 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-Pinta keeps a log at `~/.local/state/pinta/pinta.log` (`$XDG_STATE_HOME`): every
-error it shows, each Apply and Reset, `pinta watch` switches, and GTK/GLib
-warnings. Check it first when something goes wrong; `pinta watch` also logs to
-the journal (`journalctl --user -u pinta-watch`).
+Recoolor keeps a log at `~/.local/state/recoolor/recoolor.log` (`$XDG_STATE_HOME`): every
+error it shows, each Apply and Reset, `recoolor watch` switches, and GTK/GLib
+warnings. Check it first when something goes wrong; `recoolor watch` also logs to
+the journal (`journalctl --user -u recoolor-watch`).
 
 One test loads the generated CSS into GTK's own parser and needs a display; it
 skips without one. CI runs it under `xvfb-run`.

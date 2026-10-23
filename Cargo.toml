@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/pinta-core", "crates/pinta"]
+members = ["crates/recoolor-core", "crates/recoolor"]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,4 +9,8 @@ rust-version = "1.85"
 license = "GPL-3.0-or-later"
 
 [workspace.dependencies]
-pinta-core = { path = "crates/pinta-core" }
+recoolor-core = { path = "crates/recoolor-core" }
+
+[profile.release]
+lto = "thin"
+strip = true
