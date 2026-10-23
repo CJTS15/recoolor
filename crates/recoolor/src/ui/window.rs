@@ -203,14 +203,22 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
 
     // Colors fade while the `fading` class is on the window. Only then, so the
     // transition does not replace libadwaita's own ones the rest of the time.
-    // The selected card shows through the preview, so it needs no highlight; the
-    // keyboard focus ring stays.
+    // The selected card and accent get an accent-colored ring that follows their
+    // own rounded corners (GTK draws outlines along the border radius) instead of
+    // the flow box's square selection background.
     let fade = gtk::CssProvider::new();
     fade.load_from_string(
         "window.fading, window.fading * { transition: background-color 400ms ease-out, \
          color 400ms ease-out, border-color 400ms ease-out, box-shadow 400ms ease-out, \
          outline-color 400ms ease-out; }\n\
-         flowboxchild:selected { background: none; }",
+         flowboxchild:selected { background: none; }\n\
+         flowboxchild > .card { outline: 2px solid transparent; outline-offset: 2px; \
+         transition: outline-color 200ms ease-out; }\n\
+         flowboxchild:selected > .card { outline-color: var(--accent-color); }\n\
+         flowboxchild:hover:not(:selected) > .card { outline-color: alpha(currentColor, 0.15); }\n\
+         button.accent-swatch { padding: 4px; outline: 2px solid transparent; \
+         outline-offset: -2px; transition: outline-color 200ms ease-out; }\n\
+         button.accent-swatch:checked { background: none; outline-color: var(--accent-color); }",
     );
     if let Some(display) = gdk::Display::default() {
         gtk::style_context_add_provider_for_display(

@@ -70,7 +70,7 @@ impl AccentRow {
             let button = gtk::ToggleButton::builder()
                 .child(&swatch)
                 .tooltip_text(label)
-                .css_classes(["circular", "flat"])
+                .css_classes(["circular", "flat", "accent-swatch"])
                 .build();
             button.update_property(&[gtk::accessible::Property::Label(label)]);
             if let Some(first) = buttons.first() {
