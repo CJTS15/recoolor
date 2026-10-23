@@ -327,6 +327,11 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         }
     }
 
+    // In the applied palette's colors from the start, or GNOME's without one.
+    if let Some(accent) = &win.accent {
+        accent.set_palette(win.palette_in_view());
+    }
+
     window
 }
 
@@ -395,8 +400,8 @@ impl Window {
             self.selected().map(|p| Toolkit::Gtk4.render(&tint(p)))
         };
         self.set_preview(css.as_deref());
-        if let (Some(accent), Some(palette)) = (&self.accent, self.palette_in_view()) {
-            accent.set_palette(palette);
+        if let Some(accent) = &self.accent {
+            accent.set_palette(self.palette_in_view());
         }
         self.update_apply();
     }

@@ -11,18 +11,19 @@ use recoolor_core::{Color, Palette};
 
 use crate::desktop;
 
-/// `None` is the palette's own accent (GNOME's setting left at its default).
-const CHOICES: [(Option<&str>, &str); 10] = [
-    (None, "Palette's Own"),
-    (Some("blue"), "Blue"),
-    (Some("teal"), "Teal"),
-    (Some("green"), "Green"),
-    (Some("yellow"), "Yellow"),
-    (Some("orange"), "Orange"),
-    (Some("red"), "Red"),
-    (Some("pink"), "Pink"),
-    (Some("purple"), "Purple"),
-    (Some("slate"), "Slate"),
+/// `None` is the palette's own accent (GNOME's setting left at its default). The
+/// colors are GNOME's own, shown until a palette is in view; GNOME's default is blue.
+const CHOICES: [(Option<&str>, &str, Color); 10] = [
+    (None, "Palette's Own", Color::rgb(0x35, 0x84, 0xe4)),
+    (Some("blue"), "Blue", Color::rgb(0x35, 0x84, 0xe4)),
+    (Some("teal"), "Teal", Color::rgb(0x21, 0x90, 0xa4)),
+    (Some("green"), "Green", Color::rgb(0x3a, 0x94, 0x4a)),
+    (Some("yellow"), "Yellow", Color::rgb(0xc8, 0x88, 0x00)),
+    (Some("orange"), "Orange", Color::rgb(0xed, 0x5b, 0x00)),
+    (Some("red"), "Red", Color::rgb(0xe6, 0x2d, 0x42)),
+    (Some("pink"), "Pink", Color::rgb(0xd5, 0x61, 0x99)),
+    (Some("purple"), "Purple", Color::rgb(0x91, 0x41, 0xac)),
+    (Some("slate"), "Slate", Color::rgb(0x6f, 0x83, 0x96)),
 ];
 
 pub struct AccentRow {
@@ -38,16 +39,15 @@ impl AccentRow {
             .settings_schema()?
             .has_key("accent-color")
             .then_some(())?;
-        let colors = Rc::new(RefCell::new(vec![
-            Color::rgb(0x80, 0x80, 0x80);
-            CHOICES.len()
-        ]));
+        let colors = Rc::new(RefCell::new(
+            CHOICES.iter().map(|c| c.2).collect::<Vec<_>>(),
+        ));
         let row = gtk::Box::builder()
             .spacing(4)
             .halign(gtk::Align::Center)
             .build();
         let mut buttons: Vec<gtk::ToggleButton> = Vec::new();
-        for (i, (name, label)) in CHOICES.into_iter().enumerate() {
+        for (i, (name, label, _)) in CHOICES.into_iter().enumerate() {
             let swatch = gtk::DrawingArea::builder()
                 .content_width(20)
                 .content_height(20)
@@ -114,15 +114,15 @@ impl AccentRow {
 
     /// Marks the current choice, e.g. after it changed in Settings.
     pub fn select(&self, choice: Option<&str>) {
-        let i = CHOICES.iter().position(|(n, _)| *n == choice).unwrap_or(0);
+        let i = CHOICES.iter().position(|(n, ..)| *n == choice).unwrap_or(0);
         self.buttons[i].set_active(true);
     }
 
-    /// Draws the swatches in `palette`'s colors.
-    pub fn set_palette(&self, palette: &Palette) {
+    /// Draws the swatches in `palette`'s colors, or GNOME's without one.
+    pub fn set_palette(&self, palette: Option<&Palette>) {
         *self.colors.borrow_mut() = CHOICES
             .iter()
-            .map(|(name, _)| palette.with_accent(*name).colors.accent)
+            .map(|(name, _, gnome)| palette.map_or(*gnome, |p| p.with_accent(*name).colors.accent))
             .collect();
         for button in &self.buttons {
             if let Some(swatch) = button.child() {
