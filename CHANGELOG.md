@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.1 — 2026-10-23
+
+- GNOME Shell: after GDM Settings used Recoolor's theme for the login screen,
+  Recoolor recolored its own colors again, leaving quick settings unreadable
+  and the stylesheet growing with each use. It now ignores what GDM Settings
+  appended.
+- Light mode: GNOME keeps the Shell dark unless the style is `prefer-light`, so
+  a light palette ended up on dark popups (notably with Blur my Shell). While
+  the Shell is themed, light mode now uses `prefer-light`; Reset restores yours.
+- The watcher no longer re-applies everything several times per change, which
+  caused lag after applying.
+
 ## 0.1.0 — 2026-10-23
 
 First release.

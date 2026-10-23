@@ -4,7 +4,7 @@
 %global debug_package %{nil}
 
 Name:           recoolor
-Version:        0.1.0
+Version:        0.1.1
 Release:        1%{?dist}
 Summary:        Recolor GNOME and its apps with one palette
 License:        GPL-3.0-or-later
@@ -62,5 +62,8 @@ appstreamcli validate --no-net %{buildroot}%{_metainfodir}/%{app_id}.metainfo.xm
 %{_datadir}/icons/hicolor/symbolic/apps/%{app_id}-symbolic.svg
 
 %changelog
+* Fri Oct 23 2026 CJ Sabijon <cjsabijon@gmail.com> - 0.1.1-1
+- Fix unreadable Shell after GDM Settings used the theme; light Shell in light mode.
+
 * Fri Oct 23 2026 CJ Sabijon <cjsabijon@gmail.com> - 0.1.0-1
 - First release.
