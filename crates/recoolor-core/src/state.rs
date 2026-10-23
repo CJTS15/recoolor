@@ -33,6 +33,9 @@ pub struct State {
     /// the key was not in `settings.json`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vscode_previous: Option<String>,
+    /// GNOME's `color-scheme`, when Recoolor turned `default` into `prefer-light`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_scheme_previous: Option<String>,
 }
 
 pub fn path(state_home: &Path) -> PathBuf {
@@ -86,6 +89,7 @@ mod tests {
             cursors_previous: None,
             ptyxis_previous: Some("Tokyo Night".into()),
             vscode_previous: Some(String::new()),
+            color_scheme_previous: Some("default".into()),
         };
         state.save(&path).unwrap();
         assert_eq!(State::load(&path).unwrap(), state);
