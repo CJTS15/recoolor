@@ -15,7 +15,6 @@ use crate::palette::Palette;
 
 const CSS_FILE: &str = "gtk.css";
 const BACKUP_FILE: &str = "gtk.css.pinta-backup";
-const TEMP_FILE: &str = ".gtk.css.pinta-tmp";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Toolkit {
@@ -52,6 +51,8 @@ pub enum ApplyError {
         backup.display()
     )]
     BackupExists { css: PathBuf, backup: PathBuf },
+    #[error("{} was not written by Pinta, so Pinta leaves it alone.", path.display())]
+    Foreign { path: PathBuf },
 }
 
 /// What a toolkit's `gtk.css` currently is.
@@ -60,6 +61,11 @@ pub enum CssState {
     Missing,
     /// Written by Pinta with this palette.
     Pinta(String),
+    /// Written by Pinta with a light/dark pair that follows the system style.
+    PintaPair {
+        light: String,
+        dark: String,
+    },
     /// Anything else: the user's own CSS or another theme's.
     Foreign,
 }
@@ -116,9 +122,30 @@ impl GtkConfig {
             .collect()
     }
 
-    /// Writes `palette` for both toolkits. Checks every toolkit before changing any,
-    /// so a backup conflict leaves everything untouched.
+    /// Writes `palette` for both toolkits.
     pub fn apply(&self, palette: &Palette) -> Result<(), ApplyError> {
+        self.write(Toolkit::ALL.map(|toolkit| (toolkit, toolkit.render(palette))))
+    }
+
+    /// Writes a pair that follows GNOME's light/dark style. GTK4 switches by itself;
+    /// GTK3 has no media query, so it gets the palette for `dark_now` and has to be
+    /// rewritten on each switch (`pinta watch`).
+    pub fn apply_pair(
+        &self,
+        light: &Palette,
+        dark: &Palette,
+        dark_now: bool,
+    ) -> Result<(), ApplyError> {
+        let gtk3 = css::gtk3(if dark_now { dark } else { light });
+        self.write([
+            (Toolkit::Gtk3, gtk3),
+            (Toolkit::Gtk4, css::gtk4_pair(light, dark)),
+        ])
+    }
+
+    /// Checks every toolkit before changing any, so a backup conflict leaves
+    /// everything untouched.
+    fn write(&self, files: [(Toolkit, String); 2]) -> Result<(), ApplyError> {
         let mut to_back_up = Vec::new();
         for toolkit in Toolkit::ALL {
             let (css, backup) = (self.css_path(toolkit), self.backup_path(toolkit));
@@ -133,8 +160,8 @@ impl GtkConfig {
         for (css, backup) in to_back_up {
             fs::rename(&css, &backup).map_err(io_err(&css))?;
         }
-        for toolkit in Toolkit::ALL {
-            write_atomic(&self.css_path(toolkit), &toolkit.render(palette))?;
+        for (toolkit, contents) in files {
+            write_atomic(&self.css_path(toolkit), &contents)?;
         }
         Ok(())
     }
@@ -151,7 +178,7 @@ impl GtkConfig {
         let (css, backup) = (self.css_path(toolkit), self.backup_path(toolkit));
         let had_pinta = match css_state(&css)? {
             CssState::Foreign => return Ok(RestoreOutcome::LeftForeign),
-            CssState::Pinta(_) => true,
+            CssState::Pinta(_) | CssState::PintaPair { .. } => true,
             CssState::Missing => false,
         };
         let has_backup = exists(&backup)?;
@@ -179,7 +206,13 @@ fn css_state(path: &Path) -> Result<CssState, ApplyError> {
     };
     let text = String::from_utf8_lossy(&bytes);
     Ok(match css::applied_palette_id(&text) {
-        Some(id) => CssState::Pinta(id.to_owned()),
+        Some(id) => match id.split_once(css::PAIR_SEPARATOR) {
+            Some((light, dark)) => CssState::PintaPair {
+                light: light.to_owned(),
+                dark: dark.to_owned(),
+            },
+            None => CssState::Pinta(id.to_owned()),
+        },
         None => CssState::Foreign,
     })
 }
@@ -195,10 +228,14 @@ fn exists(path: &Path) -> Result<bool, ApplyError> {
 
 /// Writes through a temp file and a rename, so apps starting mid-write never read
 /// half a stylesheet.
-fn write_atomic(path: &Path, contents: &str) -> Result<(), ApplyError> {
-    let dir = path.parent().expect("css path has a parent");
+pub(crate) fn write_atomic(path: &Path, contents: &str) -> Result<(), ApplyError> {
+    let dir = path.parent().expect("path has a parent");
     fs::create_dir_all(dir).map_err(io_err(dir))?;
-    let tmp = dir.join(TEMP_FILE);
+    let name = path
+        .file_name()
+        .expect("path has a file name")
+        .to_string_lossy();
+    let tmp = dir.join(format!(".{name}.pinta-tmp"));
     let result = (|| {
         let mut file = fs::File::create(&tmp)?;
         file.write_all(contents.as_bytes())?;
@@ -211,7 +248,7 @@ fn write_atomic(path: &Path, contents: &str) -> Result<(), ApplyError> {
     result.map_err(io_err(path))
 }
 
-fn io_err(path: &Path) -> impl FnOnce(io::Error) -> ApplyError + '_ {
+pub(crate) fn io_err(path: &Path) -> impl FnOnce(io::Error) -> ApplyError + '_ {
     move |source| ApplyError::Io {
         path: path.to_owned(),
         source,

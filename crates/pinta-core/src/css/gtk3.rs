@@ -22,7 +22,7 @@ pub fn gtk3(palette: &Palette) -> String {
     let destructive_fg = r.destructive_fg;
     let accent_fg = r.accent_fg;
 
-    let mut css = header(palette);
+    let mut css = header(&palette.id);
     css.push_str(&format!(
         "\
 @define-color theme_bg_color {base};

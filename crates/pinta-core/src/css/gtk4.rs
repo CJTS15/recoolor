@@ -3,15 +3,31 @@
 //! libadwaita styles everything from named colors, so overriding them recolors
 //! libadwaita apps completely. Each color is emitted twice: as a CSS variable
 //! (`--window-bg-color`, libadwaita 1.6+) and as `@define-color` for older releases.
+//!
+//! A light/dark pair puts the dark palette inside `@media (prefers-color-scheme: dark)`
+//! (GTK 4.16+), so apps follow GNOME's style switch without Pinta running.
 
 use std::fmt::Write;
 
-use super::{Roles, header};
+use super::{PAIR_SEPARATOR, Roles, header};
 use crate::palette::Palette;
 
 pub fn gtk4(palette: &Palette) -> String {
+    header(&palette.id) + &colors(palette)
+}
+
+pub fn gtk4_pair(light: &Palette, dark: &Palette) -> String {
+    format!(
+        "{}{}\n@media (prefers-color-scheme: dark) {{\n{}}}\n",
+        header(&format!("{}{PAIR_SEPARATOR}{}", light.id, dark.id)),
+        colors(light),
+        colors(dark)
+    )
+}
+
+fn colors(palette: &Palette) -> String {
     let colors = named_colors(palette);
-    let mut css = header(palette);
+    let mut css = String::new();
 
     for (name, value) in &colors {
         let _ = writeln!(css, "@define-color {name} {value};");
@@ -109,5 +125,18 @@ mod tests {
         assert!(css.contains("  --window-bg-color: #1e1e2e;"));
         assert!(css.contains("@define-color accent_bg_color #cba6f7;"));
         assert!(css.contains("@define-color accent_fg_color #11111b;"));
+    }
+
+    #[test]
+    fn pair_puts_dark_palette_in_media_query() {
+        let [latte, mocha] = ["catppuccin-latte", "catppuccin-mocha"]
+            .map(|id| bundled().into_iter().find(|p| p.id == id).unwrap());
+        let css = gtk4_pair(&latte, &mocha);
+        let (light_part, dark_part) = css
+            .split_once("@media (prefers-color-scheme: dark) {")
+            .unwrap();
+        assert!(light_part.contains("--window-bg-color: #eff1f5;"));
+        assert!(dark_part.contains("--window-bg-color: #1e1e2e;"));
+        assert!(!light_part.contains("#1e1e2e"));
     }
 }

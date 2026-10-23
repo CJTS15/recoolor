@@ -4,24 +4,57 @@ A theme switcher for GNOME. Pick a palette (Catppuccin, Dracula, Tokyo Night, â€
 and Pinta recolors GTK3 and GTK4/libadwaita apps by generating the user stylesheets
 GTK loads from `~/.config/gtk-3.0/gtk.css` and `~/.config/gtk-4.0/gtk.css`.
 
-The GTK window is still to come; for now there is a small command line:
+Run `pinta` to open the window: pick a card to preview it on Pinta itself, then
+Apply. Reset undoes everything Pinta changed. The same things work from the
+command line:
 
 ```sh
-cargo run -- list                      # bundled and user palettes
-cargo run -- show catppuccin-mocha     # print the GTK4 CSS (add `gtk3` for GTK3)
-cargo run -- apply catppuccin-mocha    # write both stylesheets
-cargo run -- status
-cargo run -- restore                   # undo
+pinta list                                     # bundled and user palettes
+pinta show catppuccin-mocha                    # print the GTK4 CSS (add `gtk3` for GTK3)
+pinta apply catppuccin-mocha                   # write both stylesheets
+pinta apply catppuccin-latte catppuccin-mocha  # a light/dark pair
+pinta status
+pinta restore                                  # undo
 ```
 
 Apps read `gtk.css` at startup, so restart them after applying.
+
+Requires GNOME 47 or newer (GTK 4.16, libadwaita 1.6).
+
+## Install
+
+Build dependencies: `gtk4-devel libadwaita-devel` (Fedora) or
+`libgtk-4-dev libadwaita-1-dev` (Debian/Ubuntu), plus a Rust toolchain.
+
+```sh
+cargo install --path crates/pinta
+install -Dm644 data/io.github.cjts15.Pinta.desktop -t ~/.local/share/applications
+install -Dm644 data/icons/hicolor/scalable/apps/io.github.cjts15.Pinta.svg \
+  -t ~/.local/share/icons/hicolor/scalable/apps
+install -Dm644 data/icons/hicolor/symbolic/apps/io.github.cjts15.Pinta-symbolic.svg \
+  -t ~/.local/share/icons/hicolor/symbolic/apps
+```
+
+The desktop file runs `pinta` from your `PATH`, so `~/.cargo/bin` must be on it.
+
+## Light and dark
+
+Turn on **Follow System Style** (or run `pinta apply <light> <dark>`) to use one
+palette in light style and another in dark. GTK4 and libadwaita apps switch by
+themselves through a `prefers-color-scheme` media query. GTK3 has no media
+query, so Pinta installs a small user service, `pinta-watch.service`, that rewrites
+the GTK3 stylesheet on each switch. Applying a single palette or Reset stops and
+removes it. The service runs the `pinta` binary you applied from, so apply again
+after moving it.
 
 ## Layout
 
 - `crates/pinta-core`: the engine, with no GTK dependency. Palettes, CSS
   generation, and apply/restore.
 - `crates/pinta-core/palettes`: bundled palettes, compiled in.
-- `crates/pinta`: the app.
+- `crates/pinta`: the app: the window (`src/ui`), the command line (`src/cli.rs`),
+  and the systemd and GNOME settings glue (`src/desktop.rs`).
+- `data`: desktop file, AppStream metadata and icons.
 
 ## Palettes
 
@@ -57,4 +90,13 @@ GPL-3.0-or-later. See `LICENSE`.
 ```sh
 cargo test
 cargo clippy --all-targets -- -D warnings
+cargo fmt --check
 ```
+
+Pinta keeps a log at `~/.local/state/pinta/pinta.log` (`$XDG_STATE_HOME`): every
+error it shows, each Apply and Reset, `pinta watch` switches, and GTK/GLib
+warnings. Check it first when something goes wrong; `pinta watch` also logs to
+the journal (`journalctl --user -u pinta-watch`).
+
+One test loads the generated CSS into GTK's own parser and needs a display; it
+skips without one. CI runs it under `xvfb-run`.

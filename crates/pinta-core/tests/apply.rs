@@ -123,3 +123,29 @@ fn symlinked_css_is_backed_up_as_a_symlink() {
     cfg.restore().unwrap();
     assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
 }
+
+#[test]
+fn pair_marks_gtk4_with_both_ids_and_gtk3_with_the_current_one() {
+    let home = tempfile::tempdir().unwrap();
+    let cfg = GtkConfig::new(home.path());
+    let (latte, mocha) = (palette("catppuccin-latte"), palette("catppuccin-mocha"));
+
+    cfg.apply_pair(&latte, &mocha, true).unwrap();
+    let pair = CssState::PintaPair {
+        light: "catppuccin-latte".into(),
+        dark: "catppuccin-mocha".into(),
+    };
+    assert_eq!(
+        states(&cfg),
+        [CssState::Pinta("catppuccin-mocha".into()), pair.clone()]
+    );
+
+    cfg.apply_pair(&latte, &mocha, false).unwrap();
+    assert_eq!(
+        states(&cfg),
+        [CssState::Pinta("catppuccin-latte".into()), pair]
+    );
+
+    let outcomes = cfg.restore().unwrap();
+    assert!(outcomes.iter().all(|(_, o)| *o == RestoreOutcome::Removed));
+}
