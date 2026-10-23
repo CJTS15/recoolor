@@ -1,0 +1,29 @@
+id = "solarized-light"
+name = "Solarized Light"
+family = "Solarized"
+variant = "light"
+
+# crust is derived; text is base01 so it reads at 4.5:1.
+
+[colors]
+base = "#fdf6e3"
+mantle = "#eee8d5"
+crust = "#e4ddc8"
+surface = "#eee8d5"
+overlay = "#93a1a1"
+text = "#586e75"
+subtext = "#657b83"
+accent = "#268bd2"
+red = "#dc322f"
+orange = "#cb4b16"
+yellow = "#b58900"
+green = "#859900"
+blue = "#268bd2"
+teal = "#2aa198"
+purple = "#6c71c4"
+pink = "#d33682"
+
+# Same theme as shipped for other apps, used when installed.
+[apps]
+ptyxis = "solarized"
+fish = ["solarized"]

@@ -53,6 +53,8 @@ pub enum ApplyError {
     BackupExists { css: PathBuf, backup: PathBuf },
     #[error("{} was not written by Pinta, so Pinta leaves it alone.", path.display())]
     Foreign { path: PathBuf },
+    #[error("{}: {message}", path.display())]
+    Invalid { path: PathBuf, message: String },
 }
 
 /// What a toolkit's `gtk.css` currently is.
@@ -196,7 +198,7 @@ impl GtkConfig {
     }
 }
 
-fn css_state(path: &Path) -> Result<CssState, ApplyError> {
+pub(crate) fn css_state(path: &Path) -> Result<CssState, ApplyError> {
     if !exists(path)? {
         return Ok(CssState::Missing);
     }
@@ -218,7 +220,7 @@ fn css_state(path: &Path) -> Result<CssState, ApplyError> {
 }
 
 /// Whether anything (including a dangling symlink) is at `path`.
-fn exists(path: &Path) -> Result<bool, ApplyError> {
+pub(crate) fn exists(path: &Path) -> Result<bool, ApplyError> {
     match fs::symlink_metadata(path) {
         Ok(_) => Ok(true),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
@@ -246,6 +248,15 @@ pub(crate) fn write_atomic(path: &Path, contents: &str) -> Result<(), ApplyError
         let _ = fs::remove_file(&tmp);
     }
     result.map_err(io_err(path))
+}
+
+/// Reads a text file; a missing one is empty.
+pub(crate) fn read_or_empty(path: &Path) -> Result<String, ApplyError> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(text),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(io_err(path)(e)),
+    }
 }
 
 pub(crate) fn io_err(path: &Path) -> impl FnOnce(io::Error) -> ApplyError + '_ {

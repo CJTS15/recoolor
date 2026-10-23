@@ -18,4 +18,11 @@ orange = "#ffb86c"
 yellow = "#f1fa8c"
 green = "#50fa7b"
 blue = "#8be9fd" # Dracula has no blue; cyan stands in
+teal = "#8be9fd" # cyan, as for blue
 purple = "#bd93f9"
+pink = "#ff79c6"
+
+# Same theme as shipped for other apps, used when installed.
+[apps]
+ptyxis = "dracula"
+fish = ["Dracula Official", "dracula"]

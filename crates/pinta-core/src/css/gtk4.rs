@@ -13,17 +13,32 @@ use super::{PAIR_SEPARATOR, Roles, header};
 use crate::palette::Palette;
 
 pub fn gtk4(palette: &Palette) -> String {
-    header(&palette.id) + &colors(palette)
+    header(&palette.id) + &colors(palette) + PLAIN_GTK4
 }
 
 pub fn gtk4_pair(light: &Palette, dark: &Palette) -> String {
     format!(
-        "{}{}\n@media (prefers-color-scheme: dark) {{\n{}}}\n",
+        "{}{}\n@media (prefers-color-scheme: dark) {{\n{}}}\n{PLAIN_GTK4}",
         header(&format!("{}{PAIR_SEPARATOR}{}", light.id, dark.id)),
         colors(light),
         colors(dark)
     )
 }
+
+/// GTK's own built-in theme (what plain GTK4 apps and Chrome's GTK mode use) has
+/// its colors baked into its rules rather than named, so set the main surfaces
+/// directly (only what Chrome's GTK mode samples: windows, not every `.background`,
+/// which popovers and tooltips also carry, and not `.view`, which libadwaita often
+/// draws transparent). They read the same variables libadwaita does, so libadwaita apps look
+/// the same, and a pair still switches with the media query. Header bars use the
+/// `background` shorthand because the built-in theme draws them with a gradient,
+/// and only window title bars, since libadwaita's own header bars are often meant
+/// to be transparent (and a user stylesheet outranks libadwaita's regardless of
+/// specificity).
+const PLAIN_GTK4: &str = "
+window.background { background-color: var(--window-bg-color); color: var(--window-fg-color); }
+headerbar.titlebar { background: var(--headerbar-bg-color); color: var(--headerbar-fg-color); }
+";
 
 fn colors(palette: &Palette) -> String {
     let colors = named_colors(palette);

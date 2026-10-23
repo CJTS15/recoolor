@@ -1,0 +1,26 @@
+id = "kanagawa-wave"
+name = "Kanagawa Wave"
+family = "Kanagawa"
+variant = "dark"
+
+[colors]
+base = "#1f1f28"
+mantle = "#1a1a22"
+crust = "#16161d"
+surface = "#2a2a37"
+overlay = "#54546d"
+text = "#dcd7ba"
+subtext = "#c8c093"
+accent = "#7e9cd8"
+red = "#e46876"
+orange = "#ffa066"
+yellow = "#e6c384"
+green = "#98bb6c"
+blue = "#7e9cd8"
+teal = "#7aa89f"
+purple = "#957fb8"
+pink = "#d27e99"
+
+# Same theme as shipped for other apps, used when installed.
+[apps]
+ptyxis = "Kanagawa"

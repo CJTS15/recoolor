@@ -41,7 +41,9 @@ pub struct Colors {
     pub yellow: Color,
     pub green: Color,
     pub blue: Color,
+    pub teal: Color,
     pub purple: Color,
+    pub pink: Color,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -53,6 +55,19 @@ pub struct Palette {
     pub family: String,
     pub variant: Variant,
     pub colors: Colors,
+    pub apps: Apps,
+}
+
+/// The same theme as shipped for other apps, used instead of a generated one
+/// when it is installed, so colors match upstream exactly.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Apps {
+    /// A Ptyxis built-in palette (generated from Gogh), by its id.
+    pub ptyxis: Option<String>,
+    /// fish themes to try in order (`fish_config theme list`).
+    #[serde(default)]
+    pub fish: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -79,6 +94,8 @@ struct RawPalette {
     family: String,
     variant: Variant,
     colors: RawColors,
+    #[serde(default)]
+    apps: Apps,
 }
 
 #[derive(Deserialize)]
@@ -97,7 +114,9 @@ struct RawColors {
     yellow: Color,
     green: Color,
     blue: Color,
+    teal: Option<Color>,
     purple: Color,
+    pink: Option<Color>,
 }
 
 const BUNDLED: &[(&str, &str)] = &[
@@ -134,6 +153,45 @@ const BUNDLED: &[(&str, &str)] = &[
         "tokyo-night-day.toml",
         include_str!("../palettes/tokyo-night-day.toml"),
     ),
+    (
+        "gruvbox-dark.toml",
+        include_str!("../palettes/gruvbox-dark.toml"),
+    ),
+    (
+        "gruvbox-light.toml",
+        include_str!("../palettes/gruvbox-light.toml"),
+    ),
+    ("rose-pine.toml", include_str!("../palettes/rose-pine.toml")),
+    (
+        "rose-pine-moon.toml",
+        include_str!("../palettes/rose-pine-moon.toml"),
+    ),
+    (
+        "rose-pine-dawn.toml",
+        include_str!("../palettes/rose-pine-dawn.toml"),
+    ),
+    (
+        "everforest-dark.toml",
+        include_str!("../palettes/everforest-dark.toml"),
+    ),
+    (
+        "everforest-light.toml",
+        include_str!("../palettes/everforest-light.toml"),
+    ),
+    ("nord.toml", include_str!("../palettes/nord.toml")),
+    ("one-dark.toml", include_str!("../palettes/one-dark.toml")),
+    (
+        "solarized-dark.toml",
+        include_str!("../palettes/solarized-dark.toml"),
+    ),
+    (
+        "solarized-light.toml",
+        include_str!("../palettes/solarized-light.toml"),
+    ),
+    (
+        "kanagawa-wave.toml",
+        include_str!("../palettes/kanagawa-wave.toml"),
+    ),
 ];
 
 impl Palette {
@@ -163,6 +221,7 @@ impl Palette {
             name: raw.name,
             family: raw.family,
             variant: raw.variant,
+            apps: raw.apps,
             colors: Colors {
                 subtext: c.subtext.unwrap_or_else(|| c.text.mix(c.base, 0.3)),
                 base: c.base,
@@ -175,11 +234,36 @@ impl Palette {
                 red: c.red,
                 orange: c.orange,
                 yellow: c.yellow,
+                teal: c.teal.unwrap_or_else(|| c.blue.mix(c.green, 0.5)),
+                pink: c.pink.unwrap_or_else(|| c.red.mix(c.purple, 0.5)),
                 green: c.green,
                 blue: c.blue,
                 purple: c.purple,
             },
         })
+    }
+
+    /// This palette with its accent replaced by the color matching one of GNOME's
+    /// named accents (`blue`, `teal`, … the `accent-color` setting), so the accent
+    /// picker in Settings chooses among the palette's own colors. `None` or an
+    /// unknown name keeps the palette's accent.
+    pub fn with_accent(&self, gnome_accent: Option<&str>) -> Palette {
+        let c = &self.colors;
+        let accent = match gnome_accent {
+            Some("blue") => c.blue,
+            Some("teal") => c.teal,
+            Some("green") => c.green,
+            Some("yellow") => c.yellow,
+            Some("orange") => c.orange,
+            Some("red") => c.red,
+            Some("pink") => c.pink,
+            Some("purple") => c.purple,
+            Some("slate") => c.overlay,
+            _ => c.accent,
+        };
+        let mut palette = self.clone();
+        palette.colors.accent = accent;
+        palette
     }
 
     pub fn from_file(path: &Path) -> Result<Self, PaletteError> {
@@ -278,6 +362,31 @@ mod tests {
             let ratio = p.colors.text.contrast(p.colors.base);
             assert!(ratio >= 4.5, "{}: text contrast {ratio}", p.id);
         }
+    }
+
+    #[test]
+    fn gnome_accent_picks_palette_colors() {
+        let mocha = bundled()
+            .into_iter()
+            .find(|p| p.id == "catppuccin-mocha")
+            .unwrap();
+        let accent = |name| mocha.with_accent(name).colors.accent.to_string();
+        assert_eq!(accent(None), "#cba6f7");
+        assert_eq!(accent(Some("blue")), "#89b4fa");
+        assert_eq!(accent(Some("teal")), "#94e2d5");
+        assert_eq!(accent(Some("pink")), "#f5c2e7");
+        assert_eq!(accent(Some("nonsense")), "#cba6f7");
+    }
+
+    #[test]
+    fn teal_and_pink_are_optional() {
+        let without = bundled_source("dracula.toml")
+            .lines()
+            .filter(|l| !l.starts_with("teal") && !l.starts_with("pink"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let p = Palette::from_toml(&without, "t").unwrap();
+        assert_eq!(p.colors.pink, p.colors.red.mix(p.colors.purple, 0.5));
     }
 
     #[test]

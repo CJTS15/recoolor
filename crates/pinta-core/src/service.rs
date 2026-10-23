@@ -26,7 +26,7 @@ pub fn unit(exe: &str) -> String {
     format!(
         "{MARKER}. `pinta restore` removes it.\n\
          [Unit]\n\
-         Description=Pinta: follow GNOME's light/dark style in GTK3 apps\n\
+         Description=Pinta: keep themes in step with GNOME's light/dark style and accent\n\
          PartOf=graphical-session.target\n\
          After=graphical-session.target\n\
          \n\

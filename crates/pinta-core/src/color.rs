@@ -72,6 +72,24 @@ impl Color {
         (a.max(b) + 0.05) / (a.min(b) + 0.05)
     }
 
+    /// Hue in degrees, or `None` for a grey (channels within 24 of each other).
+    pub fn hue(self) -> Option<f32> {
+        let (r, g, b) = (i32::from(self.r), i32::from(self.g), i32::from(self.b));
+        let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+        if max - min <= 24 {
+            return None;
+        }
+        let d = (max - min) as f32;
+        let h = if max == r {
+            ((g - b) as f32 / d).rem_euclid(6.0)
+        } else if max == g {
+            (b - r) as f32 / d + 2.0
+        } else {
+            (r - g) as f32 / d + 4.0
+        };
+        Some(h * 60.0)
+    }
+
     /// The candidate that reads best on top of `self`.
     pub fn best_foreground(self, candidates: &[Color]) -> Color {
         candidates

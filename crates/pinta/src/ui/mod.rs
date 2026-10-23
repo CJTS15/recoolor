@@ -1,5 +1,6 @@
 //! The libadwaita window.
 
+mod extras;
 mod palette_card;
 mod preview;
 mod window;
