@@ -5,6 +5,7 @@ pub mod color;
 pub mod css;
 pub mod palette;
 pub mod paths;
+pub mod service;
 
 pub use apply::{ApplyError, CssState, GtkConfig, RestoreOutcome, Status, Toolkit};
 pub use color::Color;

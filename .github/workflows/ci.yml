@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # Ubuntu 24.04 ships GTK 4.14 and libadwaita 1.5; Pinta needs 4.16 and 1.6.
+    container: fedora:44
+    steps:
+      - run: dnf install -y git cargo rustfmt clippy gtk4-devel libadwaita-devel xorg-x11-server-Xvfb
+      - uses: actions/checkout@v4
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      # The GTK CSS parse test needs a display.
+      - run: xvfb-run -a cargo test

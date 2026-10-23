@@ -13,6 +13,11 @@ pub fn data_home() -> Option<PathBuf> {
     xdg_dir("XDG_DATA_HOME", ".local/share")
 }
 
+/// `$XDG_STATE_HOME`, or `~/.local/state`.
+pub fn state_home() -> Option<PathBuf> {
+    xdg_dir("XDG_STATE_HOME", ".local/state")
+}
+
 /// Where the user keeps their own palettes: `$XDG_DATA_HOME/pinta/palettes`.
 pub fn user_palettes_dir() -> Option<PathBuf> {
     data_home().map(|d| d.join("pinta/palettes"))

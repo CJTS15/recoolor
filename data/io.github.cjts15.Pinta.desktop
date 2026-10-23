@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Pinta
+Comment=Recolor GNOME apps with Catppuccin, Dracula, Tokyo Night and more
+Exec=pinta
+Icon=io.github.cjts15.Pinta
+Terminal=false
+Type=Application
+Categories=GNOME;GTK;Settings;DesktopSettings;
+Keywords=theme;palette;color;colour;dark;light;
+StartupNotify=true
