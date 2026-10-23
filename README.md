@@ -18,8 +18,9 @@ recoolor restore                                  # undo
 ```
 
 Apps read `gtk.css` once at startup, so restart them after applying. Files
-(Nautilus) keeps running after its windows close, so Apply and Reset quit it for
-you (closing any open Files windows); it opens with the new colors next time.
+(Nautilus) and Calendar keep running after their windows close, so Apply and
+Reset restart them for you (closing any of their open windows); they open with
+the new colors next time.
 The Shell updates straight away.
 
 Requires GNOME 47 or newer (GTK 4.16, libadwaita 1.6).

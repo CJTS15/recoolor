@@ -122,8 +122,8 @@ pub fn apply(
             accent.as_deref().unwrap_or("palette's own")
         ));
         let mut problems = Vec::new();
-        if let Err(e) = desktop::quit_files() {
-            problems.push(format!("Files: {e}"));
+        if let Err(e) = desktop::restart_background_apps() {
+            problems.push(e);
         }
         problems.extend(set_extras(dirs, extras, Some(look)));
         problems
@@ -173,8 +173,8 @@ pub fn reset(dirs: &Dirs) -> (Vec<(Toolkit, RestoreOutcome)>, Vec<String>) {
     if let Err(e) = desktop::set_watch(&dirs.config, false) {
         problems.push(e);
     }
-    if let Err(e) = desktop::quit_files() {
-        problems.push(format!("Files: {e}"));
+    if let Err(e) = desktop::restart_background_apps() {
+        problems.push(e);
     }
     problems.extend(set_extras(dirs, &Extras::default(), None));
     log::info("reset");

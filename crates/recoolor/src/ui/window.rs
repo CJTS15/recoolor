@@ -12,6 +12,7 @@ use recoolor_core::apps::slack;
 use recoolor_core::palette::{self, Palette, Variant};
 use recoolor_core::{ApplyError, CssState, GtkConfig, RestoreOutcome, Status, Toolkit, css, paths};
 
+use super::accent::AccentRow;
 use super::extras::ExtrasRows;
 use super::palette_card::PaletteCard;
 use super::preview;
@@ -38,6 +39,7 @@ struct Window {
     style: adw::StyleManager,
     /// GNOME's interface settings, for the accent picked in Settings.
     interface: Option<gtk::gio::Settings>,
+    accent: Option<AccentRow>,
     preview: gtk::CssProvider,
     previewing: Cell<bool>,
     /// Counts palette changes, so only the last one ends the color fade.
@@ -152,7 +154,12 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     if let Some(dirs) = &dirs {
         extras.set(&targets::current(dirs));
     }
+    let interface = desktop::interface_settings();
+    let accent = interface.as_ref().and_then(AccentRow::new);
     side.append(&pair_group);
+    if let Some(accent) = &accent {
+        side.append(&accent.group);
+    }
     side.append(&extras.group);
     side.append(&extras.apps_group);
     side.append(&preview::build());
@@ -244,7 +251,8 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         dark_row: dark_row.clone(),
         apply: apply.clone(),
         style: adw::StyleManager::default(),
-        interface: desktop::interface_settings(),
+        interface,
+        accent,
         preview,
         previewing: Cell::new(false),
         fading: Rc::new(Cell::new(0)),
@@ -270,7 +278,12 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         .connect_dark_notify(move |_| w.grid.invalidate_filter());
     if let Some(interface) = &win.interface {
         let w = win.clone();
-        interface.connect_changed(Some("accent-color"), move |_, _| w.update_preview());
+        interface.connect_changed(Some("accent-color"), move |s, _| {
+            if let Some(accent) = &w.accent {
+                accent.select(desktop::accent_choice(s).as_deref());
+            }
+            w.update_preview();
+        });
     }
 
     let w = win.clone();
@@ -374,6 +387,9 @@ impl Window {
             self.selected().map(|p| Toolkit::Gtk4.render(&tint(p)))
         };
         self.set_preview(css.as_deref());
+        if let (Some(accent), Some(palette)) = (&self.accent, self.palette_in_view()) {
+            accent.set_palette(palette);
+        }
         self.update_apply();
     }
 
@@ -428,6 +444,11 @@ impl Window {
     /// card, else the pair's current half, else what is applied.
     fn shown_palette(&self) -> Option<Palette> {
         let accent = self.interface.as_ref().and_then(desktop::accent_choice);
+        Some(self.palette_in_view()?.with_accent(accent.as_deref()))
+    }
+
+    /// The selected card, else the pair's current half, else what is applied.
+    fn palette_in_view(&self) -> Option<&Palette> {
         let dark = self.style.is_dark();
         let in_view = if self.pair.is_active() {
             self.pair_choice().map(|(l, d)| if dark { d } else { l })
@@ -449,7 +470,7 @@ impl Window {
             };
             self.palettes.iter().find(|p| p.id == id)
         })?;
-        Some(palette.with_accent(accent.as_deref()))
+        Some(palette)
     }
 
     fn show_slack_colors(&self) {

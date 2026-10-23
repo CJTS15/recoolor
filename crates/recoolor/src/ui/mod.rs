@@ -1,5 +1,6 @@
 //! The libadwaita window.
 
+mod accent;
 mod extras;
 mod palette_card;
 mod preview;
