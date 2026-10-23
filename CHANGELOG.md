@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.2 — 2026-10-23
+
+- Accent picker: an Accent Color row with GNOME's nine named accents plus the
+  palette's own, each drawn in the color it maps to. It sets GNOME's accent, so
+  Settings shows the same choice, and follows changes made there.
+- Calendar keeps a background service, so it never reloaded new colors; Apply
+  and Reset now restart it, as they already did for Files.
+- An accent-colored outline marks the selected palette card and accent swatch.
+- Blur my Shell with Preserve shell theme: popup contents (calendar, cards,
+  quick toggles) are now translucent in the palette's colors, and the Alt+Tab
+  switcher labels stay readable in light mode.
+
 ## 0.1.1 — 2026-10-23
 
 - GNOME Shell: after GDM Settings used Recoolor's theme for the login screen,
