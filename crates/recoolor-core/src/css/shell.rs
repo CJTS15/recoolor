@@ -65,6 +65,16 @@ pub fn shell_blur(palette: &Palette, bms_css: &str) -> String {
     if css.is_empty() {
         return css;
     }
+    // GNOME keeps the app switcher dark with white labels even in light style;
+    // preserve mode lightens its background but not its text, so set the text
+    // the way Blur my Shell's other mode does (black and white map through the
+    // palette to its darkest and lightest).
+    css.push_str(
+        ".bms-popup-surface-light .switcher-list, .bms-popup-surface-light .switcher-list .item-box, \
+         .bms-popup-surface-light .switcher-arrow { color: rgba(0, 0, 0, 0.85) !important; }\n\
+         .bms-popup-surface-dark .switcher-list, .bms-popup-surface-dark .switcher-list .item-box, \
+         .bms-popup-surface-dark .switcher-arrow { color: rgba(255, 255, 255, 0.9) !important; }\n",
+    );
     format!(
         "\n/* Blur my Shell, preserve-theme mode: translucent inner elements. */\n{}",
         recolor(palette, &css)
@@ -266,6 +276,11 @@ mod tests {
         ));
         assert!(!css.contains("surface-dark .quick-settings"));
         assert!(css.contains("background-color: st-transparentize(#cba6f7, 0.25) !important;"));
+        // Switcher labels: dark on the light surface, light on the dark one.
+        let latte = palette("catppuccin-latte");
+        assert!(shell_blur(&latte, bms).contains(
+            ".bms-popup-surface-light .switcher-arrow { color: rgba(76, 79, 105, 0.85) !important; }"
+        ));
         assert_eq!(shell_blur(&mocha, ""), "");
     }
 
