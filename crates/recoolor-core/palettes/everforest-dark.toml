@@ -1,0 +1,27 @@
+id = "everforest-dark"
+name = "Everforest Dark"
+family = "Everforest"
+variant = "dark"
+
+# Everforest has no pink, so Recoolor mixes one.
+
+[colors]
+base = "#2d353b"
+mantle = "#232a2e"
+crust = "#1e2326"
+surface = "#3d484d"
+overlay = "#7a8478"
+text = "#d3c6aa"
+subtext = "#9da9a0"
+accent = "#a7c080"
+red = "#e67e80"
+orange = "#e69875"
+yellow = "#dbbc7f"
+green = "#a7c080"
+blue = "#7fbbb3"
+teal = "#83c092"
+purple = "#d699b6"
+
+# Same theme as shipped for other apps, used when installed.
+[apps]
+ptyxis = "Everforest"

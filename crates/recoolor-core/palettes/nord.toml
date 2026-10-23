@@ -1,0 +1,27 @@
+id = "nord"
+name = "Nord"
+family = "Nord"
+variant = "dark"
+
+# mantle and crust are derived; subtext and pink are mixed by Recoolor.
+
+[colors]
+base = "#2e3440"
+mantle = "#292e39"
+crust = "#242933"
+surface = "#3b4252"
+overlay = "#4c566a"
+text = "#d8dee9"
+accent = "#88c0d0"
+red = "#bf616a"
+orange = "#d08770"
+yellow = "#ebcb8b"
+green = "#a3be8c"
+blue = "#81a1c1"
+teal = "#8fbcbb"
+purple = "#b48ead"
+
+# Same theme as shipped for other apps, used when installed.
+[apps]
+ptyxis = "nord"
+fish = ["nord"]

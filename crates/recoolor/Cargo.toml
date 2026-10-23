@@ -1,0 +1,13 @@
+[package]
+name = "recoolor"
+description = "Theme switcher for GNOME"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+recoolor-core.workspace = true
+# The feature levels set the oldest GNOME Recoolor runs on (47: GTK 4.16, libadwaita 1.6).
+gtk = { package = "gtk4", version = "0.11.5", features = ["v4_16"] }
+adw = { package = "libadwaita", version = "0.9.2", features = ["v1_6"] }

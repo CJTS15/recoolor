@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  rpm:
+    runs-on: ubuntu-latest
+    container: fedora:44
+    steps:
+      - run: dnf install -y git gh cargo rust gtk4-devel libadwaita-devel make rpm-build desktop-file-utils appstream xorg-x11-server-Xvfb
+      - uses: actions/checkout@v4
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Tag matches the version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)
+          test "$GITHUB_REF_NAME" = "v$version"
+      # The GTK CSS parse test needs a display.
+      - run: xvfb-run -a packaging/build-rpm.sh
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --generate-notes \
+            --title "Recoolor ${GITHUB_REF_NAME#v}" \
+            target/rpmbuild/RPMS/*/*.rpm target/rpmbuild/SRPMS/*.rpm

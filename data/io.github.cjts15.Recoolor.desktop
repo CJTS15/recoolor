@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Recoolor
+Comment=Recolor GNOME apps with Catppuccin, Dracula, Tokyo Night and more
+Exec=recoolor
+Icon=io.github.cjts15.Recoolor
+Terminal=false
+Type=Application
+Categories=GNOME;GTK;Settings;DesktopSettings;
+Keywords=theme;palette;color;colour;dark;light;
+StartupNotify=true

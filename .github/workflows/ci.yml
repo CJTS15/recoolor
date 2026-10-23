@@ -8,7 +8,7 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
-    # Ubuntu 24.04 ships GTK 4.14 and libadwaita 1.5; Pinta needs 4.16 and 1.6.
+    # Ubuntu 24.04 ships GTK 4.14 and libadwaita 1.5; Recoolor needs 4.16 and 1.6.
     container: fedora:44
     steps:
       - run: dnf install -y git cargo rustfmt clippy gtk4-devel libadwaita-devel xorg-x11-server-Xvfb
