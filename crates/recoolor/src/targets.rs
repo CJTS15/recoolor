@@ -200,6 +200,10 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
             set_shell(dirs, &mut state, when(extras.shell).map(|l| l.now)),
         ),
         (
+            "Light style",
+            set_light_shell(&mut state, extras.shell && look.is_some()),
+        ),
+        (
             "Icons",
             set_interface(
                 &mut state.icons_previous,
@@ -290,6 +294,30 @@ fn set_shell(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resul
     } else {
         Ok(())
     }
+}
+
+/// GNOME keeps the Shell dark unless `color-scheme` is `prefer-light`; `default`
+/// means light apps but a dark Shell, which Blur my Shell then paints dark behind
+/// a light palette. While Recoolor themes the Shell, light mode is `prefer-light`.
+fn set_light_shell(state: &mut State, on: bool) -> Result<(), String> {
+    let settings =
+        desktop::interface_settings().ok_or("GNOME's interface settings are not installed")?;
+    let current = settings.string("color-scheme");
+    if on {
+        if current == "default" {
+            state
+                .color_scheme_previous
+                .get_or_insert_with(|| current.to_string());
+            desktop::set_string(&settings, "color-scheme", "prefer-light")?;
+        }
+    } else if let Some(previous) = state.color_scheme_previous.clone() {
+        // Back to the user's own value, unless they have since gone dark.
+        if current == "prefer-light" {
+            desktop::set_string(&settings, "color-scheme", &previous)?;
+        }
+        state.color_scheme_previous = None;
+    }
+    Ok(())
 }
 
 fn set_interface(
