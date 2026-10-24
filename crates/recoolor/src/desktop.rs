@@ -191,7 +191,8 @@ fn running(name: &str) -> bool {
 /// Restarts apps that keep running in the background after their windows close,
 /// so they reopen with the new styles (GTK reads them only at startup). Files is
 /// quit (`kill`, what `nautilus -q` runs; `quit` only closes its windows).
-/// Calendar's service shows event reminders, so it is started again.
+/// Calendar's service shows event reminders, so it is started again, through
+/// D-Bus activation so that a Flatpak Calendar comes back as well.
 pub fn restart_background_apps() -> Result<(), String> {
     let mut problems = Vec::new();
     if running("org.gnome.Nautilus") {
@@ -206,14 +207,14 @@ pub fn restart_background_apps() -> Result<(), String> {
             // A new service would only hand over to the old one while it lives.
             for _ in 0..60 {
                 if !running(CALENDAR) {
-                    return Command::new("gnome-calendar")
-                        .arg("--gapplication-service")
-                        .stdin(std::process::Stdio::null())
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .spawn()
-                        .map(drop)
-                        .map_err(|e| e.to_string());
+                    return session_call(
+                        "org.freedesktop.DBus",
+                        "/org/freedesktop/DBus",
+                        "org.freedesktop.DBus",
+                        "StartServiceByName",
+                        Some((CALENDAR, 0u32).to_variant()),
+                    )
+                    .map(drop);
                 }
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }

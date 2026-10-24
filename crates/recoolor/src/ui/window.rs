@@ -36,6 +36,9 @@ struct Window {
     light_row: adw::ComboRow,
     dark_row: adw::ComboRow,
     apply: gtk::Button,
+    reset: gtk::Button,
+    /// Set while Apply or Reset runs on a worker thread.
+    busy: Cell<bool>,
     style: adw::StyleManager,
     /// GNOME's interface settings, for the accent picked in Settings.
     interface: Option<gtk::gio::Settings>,
@@ -258,6 +261,8 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         light_row: light_row.clone(),
         dark_row: dark_row.clone(),
         apply: apply.clone(),
+        reset: reset.clone(),
+        busy: Cell::new(false),
         style: adw::StyleManager::default(),
         interface,
         accent,
@@ -412,7 +417,8 @@ impl Window {
         } else {
             self.selected().is_some()
         };
-        self.apply.set_sensitive(ready && self.dirs.is_some());
+        self.apply
+            .set_sensitive(ready && self.dirs.is_some() && !self.busy.get());
     }
 
     fn set_preview(&self, css: Option<&str>) {
@@ -512,8 +518,8 @@ impl Window {
         dialog.present(Some(&self.window));
     }
 
-    fn on_apply(&self) {
-        let Some(dirs) = &self.dirs else {
+    fn on_apply(self: &Rc<Self>) {
+        let Some(dirs) = self.dirs.clone() else {
             return;
         };
         let choice = if self.pair.is_active() {
@@ -527,42 +533,86 @@ impl Window {
             };
             Choice::Single(p)
         };
+        let (name, palettes) = (choice.name(), choice.to_vec());
+        let (extras, dark_now) = (self.extras.get(), self.style.is_dark());
 
-        match targets::apply(dirs, choice, &self.extras.get(), self.style.is_dark()) {
-            Ok(problems) => {
-                self.toast(&format!(
-                    "Applied {}. Restart apps to see it.",
-                    choice.name()
-                ));
-                if !problems.is_empty() {
-                    self.alert("Some parts were not applied", &problems.join("\n\n"));
+        self.run_busy(
+            move || {
+                let choice = Choice::from_slice(&palettes);
+                targets::apply(&dirs, choice, &extras, dark_now)
+            },
+            move |w, result| match result {
+                Ok(problems) => {
+                    w.toast(&format!("Applied {name}. Restart apps to see it."));
+                    if !problems.is_empty() {
+                        w.alert("Some parts were not applied", &problems.join("\n\n"));
+                    }
                 }
-            }
-            Err(e @ ApplyError::BackupExists { .. }) => {
-                self.alert("Your gtk.css is in the way", &e.to_string());
-            }
-            Err(e) => self.alert("Could not apply", &e.to_string()),
-        }
-        self.extras.set(&targets::current(dirs));
-        self.refresh();
+                Err(e @ ApplyError::BackupExists { .. }) => {
+                    w.alert("Your gtk.css is in the way", &e.to_string());
+                }
+                Err(e) => w.alert("Could not apply", &e.to_string()),
+            },
+        );
     }
 
-    fn on_reset(&self) {
-        let Some(dirs) = &self.dirs else {
+    fn on_reset(self: &Rc<Self>) {
+        let Some(dirs) = self.dirs.clone() else {
             return;
         };
-        let (outcomes, problems) = targets::reset(dirs);
-        if !outcomes.is_empty() {
-            self.toast(&reset_summary(&outcomes));
+        self.run_busy(
+            move || targets::reset(&dirs),
+            |w, (outcomes, problems)| {
+                if !outcomes.is_empty() {
+                    w.toast(&reset_summary(&outcomes));
+                }
+                if !problems.is_empty() {
+                    w.alert("Some parts were not reset", &problems.join("\n\n"));
+                }
+                w.grid.unselect_all();
+                w.pair.set_active(false);
+                w.set_preview(None);
+            },
+        );
+    }
+
+    /// Runs `work` on a worker thread, since it waits on systemctl, D-Bus and
+    /// other apps, then `done` back on the main thread, and refreshes. Apply and
+    /// Reset are off meanwhile, and the app stays up even if the window closes,
+    /// so the work is never cut off halfway.
+    fn run_busy<T: Send + 'static>(
+        self: &Rc<Self>,
+        work: impl FnOnce() -> T + Send + 'static,
+        done: impl FnOnce(&Self, T) + 'static,
+    ) {
+        if self.busy.replace(true) {
+            return;
         }
-        if !problems.is_empty() {
-            self.alert("Some parts were not reset", &problems.join("\n\n"));
-        }
-        self.grid.unselect_all();
-        self.pair.set_active(false);
-        self.set_preview(None);
-        self.extras.set(&targets::current(dirs));
-        self.refresh();
+        self.apply.set_sensitive(false);
+        self.reset.set_sensitive(false);
+        self.apply.set_child(Some(&adw::Spinner::new()));
+        let hold = self.window.application().map(|app| app.hold());
+        let w = self.clone();
+        gtk::glib::spawn_future_local(async move {
+            let result = gtk::gio::spawn_blocking(work).await;
+            drop(hold);
+            w.busy.set(false);
+            w.apply.set_label("Apply");
+            w.reset.set_sensitive(w.dirs.is_some());
+            match result {
+                Ok(value) => done(&w, value),
+                // `alert` logs it; the panic message itself went to stderr.
+                Err(_) => w.alert(
+                    "Something went wrong",
+                    "Recoolor stopped partway, so some changes may be missing. Try again, or Reset.",
+                ),
+            }
+            if let Some(dirs) = &w.dirs {
+                w.extras.set(&targets::current(dirs));
+            }
+            w.refresh();
+            w.update_apply();
+        });
     }
 
     /// Updates the status line and check marks from disk, and returns what it read.

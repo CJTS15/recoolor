@@ -28,7 +28,23 @@ pub enum Choice<'a> {
     },
 }
 
-impl Choice<'_> {
+impl<'a> Choice<'a> {
+    /// One palette, or a light and a dark one, as a [`Choice`].
+    pub fn from_slice(palettes: &'a [Palette]) -> Self {
+        match palettes {
+            [light, dark] => Choice::Pair { light, dark },
+            _ => Choice::Single(&palettes[0]),
+        }
+    }
+
+    /// The palettes chosen, light first for a pair, to hand to another thread.
+    pub fn to_vec(self) -> Vec<Palette> {
+        match self {
+            Choice::Single(p) => vec![p.clone()],
+            Choice::Pair { light, dark } => vec![light.clone(), dark.clone()],
+        }
+    }
+
     pub fn name(self) -> String {
         match self {
             Choice::Single(p) => p.name.clone(),
