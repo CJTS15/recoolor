@@ -13,8 +13,8 @@ Source0:        %{name}-%{version}.tar.gz
 # The crates from crates.io, vendored so the build runs offline.
 Source1:        %{name}-%{version}-vendor.tar.gz
 
-BuildRequires:  cargo >= 1.85
-BuildRequires:  rust >= 1.85
+BuildRequires:  cargo >= 1.89
+BuildRequires:  rust >= 1.89
 BuildRequires:  gtk4-devel >= 4.16
 BuildRequires:  libadwaita-devel >= 1.6
 BuildRequires:  make

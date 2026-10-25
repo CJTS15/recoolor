@@ -234,17 +234,17 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     let preview = gtk::CssProvider::new();
     // A new provider evaluates `prefers-color-scheme` as light (GTK 4.20+); follow
     // the desktop instead, so a pair previews its dark half in dark style.
-    if preview.find_property("prefers-color-scheme").is_some() {
-        if let Some(settings) = gtk::Settings::default() {
-            settings
-                .bind_property(
-                    "gtk-interface-color-scheme",
-                    &preview,
-                    "prefers-color-scheme",
-                )
-                .sync_create()
-                .build();
-        }
+    if preview.find_property("prefers-color-scheme").is_some()
+        && let Some(settings) = gtk::Settings::default()
+    {
+        settings
+            .bind_property(
+                "gtk-interface-color-scheme",
+                &preview,
+                "prefers-color-scheme",
+            )
+            .sync_create()
+            .build();
     }
 
     let win = Rc::new(Window {
@@ -326,10 +326,10 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     broken.connect_button_clicked(move |_| w.alert("Palettes that were skipped", &details));
 
     // Select the applied palette, so Apply works for changing only the extras.
-    if let Some(CssState::Recoolor(id)) = gtk4_state(&statuses) {
-        if let Some(card) = win.palettes.iter().position(|p| &p.id == id) {
-            grid.select_child(&win.cards[card].child);
-        }
+    if let Some(CssState::Recoolor(id)) = gtk4_state(&statuses)
+        && let Some(card) = win.palettes.iter().position(|p| &p.id == id)
+    {
+        grid.select_child(&win.cards[card].child);
     }
 
     // In the applied palette's colors from the start, or GNOME's without one.
@@ -375,6 +375,7 @@ impl Window {
             Variant::Light
         };
         self.show_all.is_active()
+            || child.is_selected()
             || usize::try_from(child.index())
                 .ok()
                 .and_then(|i| self.palettes.get(i))

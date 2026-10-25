@@ -38,6 +38,21 @@ pub struct State {
     pub color_scheme_previous: Option<String>,
 }
 
+/// An exclusive lock on `recoolor/state.lock`, held until the file is dropped,
+/// so two processes never read and write `state.toml` over each other.
+pub fn lock(state_home: &Path) -> Result<fs::File, ApplyError> {
+    let path = state_home.join("recoolor/state.lock");
+    fs::create_dir_all(path.parent().expect("has a parent")).map_err(io_err(&path))?;
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(io_err(&path))?;
+    file.lock().map_err(io_err(&path))?;
+    Ok(file)
+}
+
 pub fn path(state_home: &Path) -> PathBuf {
     state_home.join("recoolor/state.toml")
 }
@@ -97,6 +112,16 @@ mod tests {
         State::default().save(&path).unwrap();
         assert!(!path.exists());
         State::default().save(&path).unwrap();
+    }
+
+    #[test]
+    fn lock_is_exclusive_until_dropped() {
+        let home = tempfile::tempdir().unwrap();
+        let held = lock(home.path()).unwrap();
+        let other = fs::File::open(home.path().join("recoolor/state.lock")).unwrap();
+        assert!(other.try_lock().is_err());
+        drop(held);
+        assert!(other.try_lock().is_ok());
     }
 
     #[test]

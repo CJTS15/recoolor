@@ -20,7 +20,6 @@ pub fn error(message: &str) {
     append("ERROR", message);
 }
 
-// ponytail: grows without rotation; fine for personal testing, trim or rotate if it gets big.
 fn append(level: &str, message: &str) {
     let Some(path) = path() else {
         return;
@@ -31,6 +30,18 @@ fn append(level: &str, message: &str) {
         .unwrap_or_default();
     // Indent continuation lines so each entry starts with a timestamp.
     let message = message.replace('\n', "\n    ");
+    // Keep the last 256 KiB once the log passes 1 MiB.
+    if fs::metadata(&path).is_ok_and(|m| m.len() > 1 << 20)
+        && let Ok(text) = fs::read_to_string(&path)
+    {
+        let cut = text.len() - (256 << 10);
+        let cut = (cut..text.len())
+            .find(|&i| text.is_char_boundary(i))
+            .unwrap_or(cut);
+        let tail = &text[cut..];
+        let tail = tail.split_once('\n').map_or(tail, |(_, rest)| rest);
+        let _ = fs::write(&path, tail);
+    }
     // Logging must never break the app, so a failed write is dropped.
     let _ = fs::create_dir_all(path.parent().expect("log path has a parent")).and_then(|()| {
         let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
