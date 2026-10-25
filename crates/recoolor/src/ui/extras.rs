@@ -3,6 +3,7 @@
 
 use std::cell::RefCell;
 use std::path::Path;
+use std::rc::Rc;
 
 use adw::prelude::*;
 use recoolor_core::{flatpak, themes};
@@ -27,6 +28,8 @@ pub struct ExtrasRows {
     shell: adw::SwitchRow,
     icons: adw::ComboRow,
     cursors: adw::ComboRow,
+    wallpaper: Rc<RefCell<Option<String>>>,
+    wallpaper_row: WallpaperRow,
     // Grow when a theme Recoolor set lies outside the scanned folders.
     icon_names: RefCell<Vec<String>>,
     cursor_names: RefCell<Vec<String>>,
@@ -96,6 +99,9 @@ impl ExtrasRows {
         group.add(&fade);
         group.add(&flatpak);
         group.add(&shell);
+        let wallpaper = Rc::new(RefCell::new(None));
+        let wallpaper_row = WallpaperRow::new(wallpaper.clone());
+        group.add(&wallpaper_row.row);
         group.add(&icons);
         group.add(&cursors);
 
@@ -194,6 +200,8 @@ impl ExtrasRows {
             shell,
             icons,
             cursors,
+            wallpaper,
+            wallpaper_row,
             icon_names: RefCell::new(icon_names),
             cursor_names: RefCell::new(cursor_names),
         }
@@ -232,6 +240,8 @@ impl ExtrasRows {
             };
             row.set_selected(pos as u32);
         };
+        *self.wallpaper.borrow_mut() = extras.wallpaper.clone();
+        self.wallpaper_row.show(extras.wallpaper.as_deref());
         select(&self.icons, &self.icon_names, &extras.icons);
         select(&self.cursors, &self.cursor_names, &extras.cursors);
     }
@@ -248,6 +258,7 @@ impl ExtrasRows {
             flatpak: self.flatpak.is_active(),
             shell: self.shell.is_active(),
             icons: chosen(&self.icons, &self.icon_names),
+            wallpaper: self.wallpaper.borrow().clone(),
             cursors: chosen(&self.cursors, &self.cursor_names),
             ptyxis: self.ptyxis.is_active(),
             fish: self.fish.is_active(),
@@ -305,4 +316,107 @@ fn show_gdm_setup(button: &gtk::Button, theme: Option<&std::path::Path>) {
         _ => {}
     });
     dialog.present(Some(button));
+}
+
+/// The wallpaper row: a thumbnail, Choose and Use Current, and a button to stop
+/// setting it. The choice takes effect on Apply, like the other rows.
+#[derive(Clone)]
+struct WallpaperRow {
+    row: adw::ActionRow,
+    picture: gtk::Picture,
+    clear: gtk::Button,
+}
+
+impl WallpaperRow {
+    fn new(chosen: Rc<RefCell<Option<String>>>) -> Self {
+        let picture = gtk::Picture::builder()
+            .content_fit(gtk::ContentFit::Cover)
+            .width_request(64)
+            .height_request(40)
+            .valign(gtk::Align::Center)
+            .css_classes(["card"])
+            .overflow(gtk::Overflow::Hidden)
+            .build();
+        let clear = gtk::Button::builder()
+            .icon_name("edit-clear-symbolic")
+            .tooltip_text("Stop Setting the Wallpaper")
+            .valign(gtk::Align::Center)
+            .css_classes(["flat"])
+            .build();
+        let current = gtk::Button::builder()
+            .icon_name("view-refresh-symbolic")
+            .tooltip_text("Use the Current Wallpaper")
+            .valign(gtk::Align::Center)
+            .css_classes(["flat"])
+            .build();
+        let choose = gtk::Button::builder()
+            .label("Choose…")
+            .valign(gtk::Align::Center)
+            .build();
+        let row = adw::ActionRow::builder().title("Wallpaper").build();
+        row.add_suffix(&picture);
+        row.add_suffix(&clear);
+        row.add_suffix(&current);
+        row.add_suffix(&choose);
+        let this = Self {
+            row,
+            picture,
+            clear,
+        };
+
+        let pick = {
+            let (this, chosen) = (this.clone(), chosen.clone());
+            move |path: Option<String>| {
+                this.show(path.as_deref());
+                *chosen.borrow_mut() = path;
+            }
+        };
+        let p = pick.clone();
+        this.clear.connect_clicked(move |_| p(None));
+        let p = pick.clone();
+        current.connect_clicked(move |_| {
+            let path = desktop::background_settings()
+                .and_then(|s| gtk::gio::File::for_uri(&s.string("picture-uri")).path())
+                .map(|p| p.display().to_string());
+            if path.is_some() {
+                p(path);
+            }
+        });
+        choose.connect_clicked(move |button| {
+            let filter = gtk::FileFilter::new();
+            filter.set_name(Some("Images"));
+            filter.add_mime_type("image/*");
+            let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
+            filters.append(&filter);
+            let dialog = gtk::FileDialog::builder()
+                .title("Choose a Wallpaper")
+                .filters(&filters)
+                .default_filter(&filter)
+                .build();
+            let window = button.root().and_downcast::<gtk::Window>();
+            let p = pick.clone();
+            dialog.open(
+                window.as_ref(),
+                gtk::gio::Cancellable::NONE,
+                move |result| {
+                    if let Some(path) = result.ok().and_then(|f| f.path()) {
+                        p(Some(path.display().to_string()));
+                    }
+                },
+            );
+        });
+        this.show(None);
+        this
+    }
+
+    fn show(&self, path: Option<&str>) {
+        let name = path
+            .and_then(|p| Path::new(p).file_name())
+            .map(|n| n.to_string_lossy());
+        self.row
+            .set_subtitle(name.as_deref().unwrap_or("Not Set by Recoolor"));
+        self.picture.set_filename(path);
+        self.picture.set_visible(path.is_some());
+        self.clear.set_visible(path.is_some());
+    }
 }

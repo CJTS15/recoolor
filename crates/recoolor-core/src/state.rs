@@ -36,6 +36,21 @@ pub struct State {
     /// GNOME's `color-scheme`, when Recoolor turned `default` into `prefer-light`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color_scheme_previous: Option<String>,
+    /// The desktop background before Recoolor set one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background_previous: Option<Background>,
+    /// The image the user picked; Recoolor's wallpapers always start from it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wallpaper_source: Option<String>,
+}
+
+/// The `org.gnome.desktop.background` keys Recoolor changes.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Background {
+    pub picture_uri: String,
+    pub picture_uri_dark: String,
+    pub picture_options: String,
 }
 
 /// An exclusive lock on `recoolor/state.lock`, held until the file is dropped,
@@ -105,6 +120,12 @@ mod tests {
             ptyxis_previous: Some("Tokyo Night".into()),
             vscode_previous: Some(String::new()),
             color_scheme_previous: Some("default".into()),
+            background_previous: Some(Background {
+                picture_uri: "file:///usr/share/backgrounds/a.jxl".into(),
+                picture_uri_dark: "file:///usr/share/backgrounds/a-d.jxl".into(),
+                picture_options: "zoom".into(),
+            }),
+            wallpaper_source: Some("/home/me/Pictures/tree.png".into()),
         };
         state.save(&path).unwrap();
         assert_eq!(State::load(&path).unwrap(), state);
