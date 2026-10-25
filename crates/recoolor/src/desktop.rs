@@ -195,10 +195,10 @@ fn running(name: &str) -> bool {
 /// D-Bus activation so that a Flatpak Calendar comes back as well.
 pub fn restart_background_apps() -> Result<(), String> {
     let mut problems = Vec::new();
-    if running("org.gnome.Nautilus") {
-        if let Err(e) = activate_action("org.gnome.Nautilus", "/org/gnome/Nautilus", "kill") {
-            problems.push(format!("cannot quit Files: {e}"));
-        }
+    if running("org.gnome.Nautilus")
+        && let Err(e) = activate_action("org.gnome.Nautilus", "/org/gnome/Nautilus", "kill")
+    {
+        problems.push(format!("cannot quit Files: {e}"));
     }
     const CALENDAR: &str = "org.gnome.Calendar";
     if running(CALENDAR) {

@@ -296,10 +296,10 @@ fn show_gdm_setup(button: &gtk::Button, theme: Option<&std::path::Path>) {
             }
         }
         "open" => {
-            if let Some(app) = &gdm_settings {
-                if let Err(e) = app.launch(&[], gtk::gio::AppLaunchContext::NONE) {
-                    crate::log::error(&format!("cannot open GDM Settings: {e}"));
-                }
+            if let Some(app) = &gdm_settings
+                && let Err(e) = app.launch(&[], gtk::gio::AppLaunchContext::NONE)
+            {
+                crate::log::error(&format!("cannot open GDM Settings: {e}"));
             }
         }
         _ => {}

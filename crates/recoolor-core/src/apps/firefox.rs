@@ -21,6 +21,8 @@ pub fn profiles(home: &Path) -> Vec<PathBuf> {
     for root in [
         home.join(".mozilla/firefox"),
         home.join(".config/mozilla/firefox"),
+        // Firefox from Flathub.
+        home.join(".var/app/org.mozilla.firefox/.mozilla/firefox"),
     ] {
         let Ok(ini) = fs::read_to_string(root.join("profiles.ini")) else {
             continue;
@@ -134,6 +136,14 @@ fn remove_import(text: &str) -> String {
         return String::new();
     }
     kept.join("\n") + "\n"
+}
+
+/// Whether the profile lets Firefox load `userChrome.css` at all.
+pub fn stylesheets_enabled(profile: &Path) -> bool {
+    const PREF: &str = "\"toolkit.legacyUserProfileCustomizations.stylesheets\", true)";
+    ["prefs.js", "user.js"].iter().any(|f| {
+        fs::read_to_string(profile.join(f)).is_ok_and(|text| text.lines().any(|l| l.contains(PREF)))
+    })
 }
 
 pub fn is_applied(profile: &Path) -> bool {

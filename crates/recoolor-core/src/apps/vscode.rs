@@ -283,15 +283,30 @@ pub fn remove_theme(text: &str) -> String {
     format!("{}{}", &text[..line_start], &text[line_end..])
 }
 
-/// Byte range of the key's string value, skipping `//` comment lines.
-fn find_value(text: &str) -> Option<(usize, usize)> {
-    text.match_indices(KEY).find_map(|(i, _)| {
+/// Whether `window.autoDetectColorScheme` is on, which makes VS Code pick its
+/// preferred light/dark themes and ignore `workbench.colorTheme`.
+pub fn auto_detects(text: &str) -> bool {
+    value_start(text, "\"window.autoDetectColorScheme\"")
+        .is_some_and(|i| text[i..].starts_with("true"))
+}
+
+/// Where the value of `key` starts, skipping keys in `//` and `/* */` comments.
+fn value_start(text: &str, key: &str) -> Option<usize> {
+    text.match_indices(key).find_map(|(i, _)| {
         let line_start = text[..i].rfind('\n').map_or(0, |n| n + 1);
-        if text[line_start..i].trim_start().starts_with("//") {
+        let in_block = text[..i].rfind("/*") > text[..i].rfind("*/");
+        if in_block || text[line_start..i].trim_start().starts_with("//") {
             return None;
         }
-        let after = text[i + KEY.len()..].trim_start().strip_prefix(':')?;
-        let quote = text.len() - after.trim_start().len();
+        let after = text[i + key.len()..].trim_start().strip_prefix(':')?;
+        Some(text.len() - after.trim_start().len())
+    })
+}
+
+/// Byte range of the theme key's string value.
+fn find_value(text: &str) -> Option<(usize, usize)> {
+    {
+        let quote = value_start(text, KEY)?;
         if !text[quote..].starts_with('"') {
             return None;
         }
@@ -305,7 +320,7 @@ fn find_value(text: &str) -> Option<(usize, usize)> {
             }
         }
         None
-    })
+    }
 }
 
 /// The object's opening brace, skipping leading `//` comment lines.
@@ -313,10 +328,10 @@ fn first_brace(text: &str) -> Option<usize> {
     let mut offset = 0;
     for line in text.split_inclusive('\n') {
         let trimmed = line.trim_start();
-        if !trimmed.starts_with("//") {
-            if let Some(i) = line.find('{') {
-                return Some(offset + i);
-            }
+        if !trimmed.starts_with("//")
+            && let Some(i) = line.find('{')
+        {
+            return Some(offset + i);
         }
         offset += line.len();
     }
@@ -346,6 +361,14 @@ mod tests {
         let set = set_theme(USER, "Recoolor Dark");
         assert_eq!(set, USER.replace("Catppuccin \\\"Mac\\\"", "Recoolor Dark"));
         assert_eq!(set_theme(&set, &previous), USER);
+    }
+
+    #[test]
+    fn skips_block_comments_and_spots_auto_detect() {
+        let text = "{\n    /* \"workbench.colorTheme\": \"Old\",\n       \"window.autoDetectColorScheme\": true */\n    \"workbench.colorTheme\": \"Mine\"\n}\n";
+        assert_eq!(current_theme(text).unwrap(), "Mine");
+        assert!(!auto_detects(text));
+        assert!(auto_detects("{ \"window.autoDetectColorScheme\": true }"));
     }
 
     #[test]

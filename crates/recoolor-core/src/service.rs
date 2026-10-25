@@ -19,6 +19,8 @@ pub fn unit_path(config_home: &Path) -> PathBuf {
 /// The unit file text for running `exe watch`.
 pub fn unit(exe: &str) -> String {
     // systemd unquotes `\` and `"` inside quotes, and expands `%` specifiers.
+    // Uninstalled without `recoolor restore`: skip instead of failing at login.
+    let condition = exe.replace('%', "%%");
     let exe = exe
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
@@ -28,6 +30,7 @@ pub fn unit(exe: &str) -> String {
          [Unit]\n\
          Description=Recoolor: keep themes in step with GNOME's light/dark style and accent\n\
          PartOf=graphical-session.target\n\
+         ConditionPathExists={condition}\n\
          After=graphical-session.target\n\
          \n\
          [Service]\n\
@@ -83,6 +86,7 @@ mod tests {
     fn quotes_paths_with_spaces_and_specials() {
         let text = unit("/home/me/My Apps/pi%n\"ta");
         assert!(text.contains("ExecStart=\"/home/me/My Apps/pi%%n\\\"ta\" watch\n"));
+        assert!(text.contains("ConditionPathExists=/home/me/My Apps/pi%%n\"ta\n"));
     }
 
     #[test]

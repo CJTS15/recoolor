@@ -92,7 +92,7 @@ fn rules(css: &str) -> impl Iterator<Item = (&str, &str)> {
 }
 
 /// GDM Settings rebuilds the system stylesheet as the original followed by the
-/// chosen theme, so after it has used Recoolor's (or Pinta's) theme the original
+/// chosen theme, so after it has used Recoolor's theme (or one from before the rename to Recoolor) the original
 /// ends at the first generated marker. Recoloring past it would recolor colors
 /// twice, compounding with every use.
 fn pristine(css: &str) -> &str {

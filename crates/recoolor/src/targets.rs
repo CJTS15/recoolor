@@ -200,6 +200,11 @@ pub fn reset(dirs: &Dirs) -> (Vec<(Toolkit, RestoreOutcome)>, Vec<String>) {
 /// `look` is what to show, or `None` to undo everything.
 fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
     let when = |on: bool| look.filter(|_| on);
+    // The window, the command line and the watcher may all get here at once.
+    let _lock = match state::lock(&dirs.state) {
+        Ok(lock) => lock,
+        Err(e) => return vec![format!("left the extras alone: {e}")],
+    };
     let path = state::path(&dirs.state);
     let mut state = match State::load(&path) {
         Ok(state) => state,
@@ -376,7 +381,13 @@ fn set_ptyxis(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result<(), 
 
     let profile = desktop::ptyxis_profile().ok_or("Ptyxis is not installed")?;
     let current = profile.string("palette").to_string();
-    let previous = state.ptyxis_previous.get_or_insert(current.clone()).clone();
+    // Recoolor's own palette is never the user's; fall back to Ptyxis's default.
+    let recorded = if current == ptyxis::PALETTE_ID {
+        "gnome".to_owned()
+    } else {
+        current.clone()
+    };
+    let previous = state.ptyxis_previous.get_or_insert(recorded).clone();
     if let Some(name) = ptyxis::builtin(look.now, look.pair) {
         ptyxis::remove(&dirs.data).map_err(|e| e.to_string())?;
         if current == name {
@@ -433,6 +444,14 @@ fn set_firefox(palette: Option<&Palette>) -> Result<(), String> {
         }
         .map_err(|e| e.to_string())?;
     }
+    // Recoolor cannot set this one with an exact undo (Firefox copies user.js
+    // into prefs.js), so it says so instead.
+    if palette.is_some() && !profiles.iter().any(|p| firefox::stylesheets_enabled(p)) {
+        return Err(
+            "turn on toolkit.legacyUserProfileCustomizations.stylesheets in about:config, then restart Firefox"
+                .into(),
+        );
+    }
     Ok(())
 }
 
@@ -479,6 +498,9 @@ fn set_vscode(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resu
     state
         .vscode_previous
         .get_or_insert_with(|| vscode::current_theme(&text).unwrap_or_default());
+    if vscode::auto_detects(&text) {
+        return Err("VS Code follows the system style (window.autoDetectColorScheme), so it ignores the selected theme; turn that off, or pick Recoolor Dark and Light as its preferred themes".into());
+    }
     let selected = vscode::set_theme(&text, vscode::label(palette));
     if selected != text {
         vscode::write_settings(&path, &selected).map_err(err)?;
