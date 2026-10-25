@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Apply and Reset run in the background, so the window no longer freezes while
+  they wait on systemd, D-Bus and Calendar. The Apply button shows a spinner
+  meanwhile, and closing the window does not cut the work off halfway.
+- Calendar is started again through D-Bus activation, so a Flatpak Calendar's
+  reminders come back after Apply or Reset too.
+
 ## 0.1.2 — 2026-10-23
 
 - Accent picker: an Accent Color row with GNOME's nine named accents plus the
