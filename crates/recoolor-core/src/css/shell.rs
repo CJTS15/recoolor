@@ -16,9 +16,12 @@ use super::{Roles, header};
 use crate::color::Color;
 use crate::palette::{Palette, Variant};
 
-/// Lightness of Adwaita's Shell background and foreground greys (`#222226`, `#fafafb`).
+/// Lightness of Adwaita's Shell greys: light style's text and popovers (`#222226`,
+/// `#fafafb`), and dark style's popovers and cards (`#36363a`, `#47474c`).
 const ADWAITA_DARK: f32 = 0.1386;
 const ADWAITA_LIGHT: f32 = 0.9817;
+const ADWAITA_DARK_POPOVER: f32 = 0.2170;
+const ADWAITA_DARK_CARD: f32 = 0.2850;
 const WHITE: Color = Color::rgb(255, 255, 255);
 const BLACK: Color = Color::rgb(0, 0, 0);
 
@@ -109,75 +112,138 @@ pub fn shell_blur(palette: &Palette, bms_css: &str) -> String {
     )
 }
 
-/// Blur my Shell's "Preserve shell theme" mode still paints its popups and
-/// notification cards translucent white or grey, and an extension's stylesheet
-/// outranks any Shell theme. These rules go in Recoolor's own extension stylesheet,
-/// which ranks like Blur my Shell's, with the class doubled to outrank its rules:
-/// the palette's window and card colors at 90%, matching the apps with the blur
-/// faintly behind.
+/// Blur my Shell's "Preserve shell theme" mode paints its popups and cards
+/// translucent white or grey, and an extension's stylesheet outranks any Shell
+/// theme. These rules go in Recoolor's own extension stylesheet, which ranks like
+/// Blur my Shell's, with the class doubled to outrank its rules. Each keeps Blur my
+/// Shell's own alpha, so its style and blur settings still show, in the palette's
+/// colors: its fills become the window color (`base`) or, for cards, `surface`;
+/// its faint overlays become the palette's text. Its transparent style keeps a
+/// readable minimum. A second set, with the fills opaque, applies under
+/// `recoolor-solid-popups`, which Recoolor's extension sets while Blur my Shell's
+/// popup blur is off, when see-through would show the windows behind unblurred.
 pub fn shell_popups(palette: &Palette, bms_css: &str) -> String {
     let c = &palette.colors;
-    let mut lines: Vec<String> = Vec::new();
-    for (sels, body) in rules(bms_css) {
-        // Only where it paints a background.
-        if !body.contains("background") || body.contains("transparent") {
-            continue;
+    let rgba =
+        |color: Color, alpha: f32| format!("rgba({}, {}, {}, {alpha})", color.r, color.g, color.b);
+    let (mut see_through, mut solid): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
+    let push = |lines: &mut Vec<String>, line: String| {
+        if !lines.contains(&line) {
+            lines.push(line);
         }
+    };
+    for (sels, body) in rules(bms_css) {
+        let Some((bms_color, alpha)) = background(body) else {
+            continue;
+        };
+        let light = u16::from(bms_color.r) + u16::from(bms_color.g) + u16::from(bms_color.b) > 384;
         for sel in sels.split(',').map(str::trim) {
-            for variant in ["light", "dark"] {
+            for variant in ["light", "dark", "transparent"] {
                 let class = format!(".bms-popup-surface-{variant}");
                 let Some(inner) = sel.strip_prefix(&format!("{class} ")) else {
                     continue;
                 };
-                let color = match inner {
-                    ".message" | ".message-list .message" | ".quick-toggle-menu" => c.surface,
-                    ".message-list .message:hover" => c.surface.mix(c.text, 0.05),
-                    ".message-list .message:active" | ".message-list .message:focus" => {
-                        c.surface.mix(c.text, 0.1)
-                    }
-                    ".message:second-in-stack" => c.surface.mix(c.base, 0.3),
-                    ".message:lower-in-stack" => c.surface.mix(c.base, 0.6),
-                    // GNOME keeps these dark with light text in light style too (and the
-                    // Alt+Tab switcher, which Recoolor makes follow the style).
-                    ".osd-window"
-                    | ".workspace-switcher"
-                    | ".resize-popup"
-                    | ".screenshot-ui-panel"
-                        if palette.variant == Variant::Light =>
-                    {
-                        c.text
-                    }
-                    // The popups and dialogs themselves.
-                    _ if !inner.contains([' ', ':', '>']) => c.base,
-                    _ => continue,
+                let container = !inner.contains([' ', ':', '>']);
+                // Its own background for the style, not a tint over one.
+                let fill = match variant {
+                    "light" => light,
+                    "dark" => !light,
+                    _ => !light && (alpha > 0.0 || container),
                 };
-                let line = format!(
-                    "{class}{class} {inner} {{ background-color: rgba({}, {}, {}, 0.9) !important; }}",
-                    color.r, color.g, color.b
-                );
-                if !lines.contains(&line) {
-                    lines.push(line);
+                if alpha == 0.0 && !(variant == "transparent" && container) {
+                    continue;
+                }
+                let card = inner == ".quick-toggle-menu"
+                    || inner.starts_with(".message") && !inner.contains(".message-media-control");
+                let always_dark = palette.variant == Variant::Light
+                    && matches!(
+                        inner,
+                        ".osd-window"
+                            | ".workspace-switcher"
+                            | ".resize-popup"
+                            | ".screenshot-ui-panel"
+                    );
+                let color = match () {
+                    _ if !fill => c.text,
+                    _ if always_dark => c.text,
+                    _ if card => c.surface,
+                    _ => c.base,
+                };
+                let alpha = if variant == "transparent" && fill {
+                    alpha.max(0.5)
+                } else {
+                    alpha
+                };
+                let rule = |prefix: &str, alpha: f32| {
+                    format!(
+                        "{prefix}{class}{class} {inner} {{ background-color: {} !important; }}",
+                        rgba(color, alpha)
+                    )
+                };
+                push(&mut see_through, rule("", alpha));
+                if fill {
+                    push(&mut solid, rule(".recoolor-solid-popups", 1.0));
                 }
             }
         }
     }
-    lines.join("\n")
+    see_through.extend(solid);
+    see_through.join("\n")
+}
+
+/// The color and alpha of a rule's `background` or `background-color`, with
+/// `transparent` as black at 0.
+fn background(body: &str) -> Option<(Color, f32)> {
+    let value = body.split(';').find_map(|decl| {
+        let (key, v) = decl.split_once(':')?;
+        matches!(key.trim(), "background" | "background-color").then(|| v.trim())
+    })?;
+    if value.starts_with("transparent") {
+        return Some((BLACK, 0.0));
+    }
+    let inner = value.strip_prefix("rgba(")?.split(')').next()?;
+    let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
+    let [r, g, b, a] = parts[..] else {
+        return None;
+    };
+    Some((
+        Color::rgb(r.parse().ok()?, g.parse().ok()?, b.parse().ok()?),
+        a.parse().ok()?,
+    ))
 }
 
 /// SearchLightNG, a search popup: with its blur synced to Blur my Shell it ignores
-/// its own background color and always uses white text. A palette tint on its
-/// border layer (between the blur and the results) and the palette's text, with
-/// two ids to outrank its own one-id rules.
-pub fn searchlight(palette: &Palette) -> String {
+/// its own background color and always uses white text. A palette tint behind its
+/// results, as see-through as Blur my Shell's popups are for the style, and the
+/// palette's text, with two ids to outrank its own one-id rules. The tint sits on
+/// the results box itself: on the layers below, the blur's brightness darkens it.
+pub fn searchlight(palette: &Palette, bms_css: Option<&str>) -> String {
     let c = &palette.colors;
-    let rgba =
-        |color: Color, alpha: f32| format!("rgba({}, {}, {}, {alpha})", color.r, color.g, color.b);
+    let variant = match palette.variant {
+        Variant::Light => "light",
+        Variant::Dark => "dark",
+    };
+    let popup = format!(".bms-popup-surface-{variant} .popup-menu-content");
+    // Blur my Shell's own popup alpha; its defaults without it.
+    let alpha = bms_css
+        .and_then(|bms| {
+            rules(bms)
+                .filter(|(sels, _)| sels.split(',').any(|s| s.trim() == popup))
+                .find_map(|(_, body)| background(body))
+        })
+        .map_or(
+            if palette.variant == Variant::Light {
+                0.65
+            } else {
+                0.5
+            },
+            |(_, alpha)| alpha,
+        );
     format!(
-        "#searchLight #searchLightBorder {{ background-color: {}; }}\n\
+        "#searchLight #searchLightBox {{ background-color: rgba({}, {}, {}, {alpha}); }}\n\
          #searchLight #searchLightBox * {{ color: {} !important; }}\n\
          #searchLight #searchLightBox StBoxLayout.search-section-content {{ background-color: transparent !important; }}",
-        rgba(c.base, 0.9),
-        c.text
+        c.base.r, c.base.g, c.base.b, c.text
     )
 }
 
@@ -206,6 +272,8 @@ fn recolor(palette: &Palette, css: &str) -> String {
     let mut out = String::with_capacity(css.len());
     let (mut i, mut copied) = (0, 0);
     let (mut depth, mut in_value) = (0u32, false);
+    // Where the current declaration starts, and whether it is a text `color`.
+    let (mut decl_start, mut text) = (0, false);
 
     while i < bytes.len() {
         if bytes[i..].starts_with(b"/*") {
@@ -222,6 +290,7 @@ fn recolor(palette: &Palette, css: &str) -> String {
             b'{' => {
                 depth += 1;
                 in_value = false;
+                decl_start = i + 1;
                 None
             }
             b'}' => {
@@ -229,15 +298,17 @@ fn recolor(palette: &Palette, css: &str) -> String {
                 in_value = false;
                 None
             }
-            b':' if depth > 0 => {
+            b':' if depth > 0 && !in_value => {
                 in_value = true;
+                text = css[decl_start..i].trim() == "color";
                 None
             }
             b';' => {
                 in_value = false;
+                decl_start = i + 1;
                 None
             }
-            _ if in_value => token_at(css, i, palette, &accent, &accent_fg),
+            _ if in_value => token_at(css, i, palette, &accent, &accent_fg, text),
             _ => None,
         };
         match replacement {
@@ -261,6 +332,7 @@ fn token_at(
     palette: &Palette,
     accent: &str,
     accent_fg: &str,
+    text: bool,
 ) -> Option<(usize, String)> {
     let rest = &css[i..];
     let bytes = rest.as_bytes();
@@ -288,7 +360,7 @@ fn token_at(
             _ => return None,
         };
         let color = Color::from_hex(&format!("#{hex}")).ok().filter(|_| ends)?;
-        return Some((1 + digits, map(color, palette).to_string()));
+        return Some((1 + digits, map(color, palette, text).to_string()));
     }
 
     if starts_word && (rest.starts_with("rgba(") || rest.starts_with("rgb(")) {
@@ -296,7 +368,11 @@ fn token_at(
         let close = rest.find(')')?;
         let parts: Vec<&str> = rest[open + 1..close].split(',').map(str::trim).collect();
         let channel = |k: usize| parts.get(k)?.parse::<u8>().ok();
-        let color = map(Color::rgb(channel(0)?, channel(1)?, channel(2)?), palette);
+        let color = map(
+            Color::rgb(channel(0)?, channel(1)?, channel(2)?),
+            palette,
+            text,
+        );
         let text = match parts.get(3) {
             Some(alpha) if parts.len() == 4 => {
                 format!("rgba({}, {}, {}, {alpha})", color.r, color.g, color.b)
@@ -307,33 +383,51 @@ fn token_at(
         return Some((close + 1, text));
     }
 
-    for (name, color) in [("white", WHITE), ("black", BLACK)] {
+    // `whitesmoke` before `white`, which it starts with.
+    for (name, color) in [
+        ("whitesmoke", Color::rgb(245, 245, 245)),
+        ("white", WHITE),
+        ("black", BLACK),
+    ] {
         let ends = bytes.get(name.len()).is_none_or(|&b| !ident(b));
         if starts_word && ends && rest.starts_with(name) {
-            return Some((name.len(), map(color, palette).to_string()));
+            return Some((name.len(), map(color, palette, text).to_string()));
         }
     }
     None
 }
 
 /// The palette color standing in for one of Adwaita's.
-fn map(color: Color, palette: &Palette) -> Color {
+fn map(color: Color, palette: &Palette, text: bool) -> Color {
     let c = &palette.colors;
     let Some(hue) = color.hue() else {
-        let lightness =
-            (f32::from(color.r) + f32::from(color.g) + f32::from(color.b)) / 3.0 / 255.0;
-        let (bg, fg) = match palette.variant {
-            Variant::Dark => (ADWAITA_DARK, ADWAITA_LIGHT),
-            Variant::Light => (ADWAITA_LIGHT, ADWAITA_DARK),
-        };
-        let t = (lightness - bg) / (fg - bg);
-        if t >= 0.0 {
-            return c.base.mix(c.text, t);
-        }
-        // Beyond the background, away from the text: the panel's black, white cards.
+        let l = (f32::from(color.r) + f32::from(color.g) + f32::from(color.b)) / 3.0 / 255.0;
+        // Adwaita's popover grey becomes the palette's base and its card grey the
+        // palette's surface, as they are in apps; other greys run between those,
+        // out to crust and text.
         return match palette.variant {
-            Variant::Dark => c.base.mix(c.crust, (bg - lightness) / bg),
-            Variant::Light => c.base.mix(WHITE, (lightness - bg) / (1.0 - bg) * 0.5),
+            Variant::Dark if l >= ADWAITA_DARK_CARD => c.surface.mix(
+                c.text,
+                (l - ADWAITA_DARK_CARD) / (ADWAITA_LIGHT - ADWAITA_DARK_CARD),
+            ),
+            Variant::Dark if l >= ADWAITA_DARK_POPOVER => c.base.mix(
+                c.surface,
+                (l - ADWAITA_DARK_POPOVER) / (ADWAITA_DARK_CARD - ADWAITA_DARK_POPOVER),
+            ),
+            Variant::Dark => c
+                .base
+                .mix(c.crust, (ADWAITA_DARK_POPOVER - l) / ADWAITA_DARK_POPOVER),
+            Variant::Light if l <= ADWAITA_LIGHT => c
+                .base
+                .mix(c.text, (ADWAITA_LIGHT - l) / (ADWAITA_LIGHT - ADWAITA_DARK)),
+            // Lighter than the popover: white text on the dark OSDs and panel stays
+            // near white; white cards take the palette's surface.
+            Variant::Light if text => c
+                .base
+                .mix(WHITE, (l - ADWAITA_LIGHT) / (1.0 - ADWAITA_LIGHT) * 0.5),
+            Variant::Light => c
+                .base
+                .mix(c.surface, (l - ADWAITA_LIGHT) / (1.0 - ADWAITA_LIGHT)),
         };
     };
 
@@ -372,21 +466,39 @@ mod tests {
     }
 
     #[test]
-    fn popups_take_the_palette_at_90_percent() {
+    fn popups_follow_blur_my_shells_alpha_in_the_palette() {
         let mocha = palette("catppuccin-mocha");
         let bms = ".bms-popup-surface-dark .popup-menu-content,\n\
             .bms-popup-surface-dark .quick-settings { background: rgba(30, 30, 33, 0.5) !important; }\n\
+            .bms-popup-surface-dark .message-list .message { background: rgba(255, 255, 255, 0.07) !important; }\n\
             .bms-popup-surface-light .message-list .message:hover { background: rgba(255, 255, 255, 0.4) !important; }\n\
+            .bms-popup-surface-transparent .popup-menu-content { background: transparent !important; }\n\
             .bms-popup-surface-dark .message-media-control { background-color: transparent; }\n\
             .bms-popup-surface-dark .modal-dialog { border: 1px solid rgba(255, 255, 255, 0.1); }\n\
             .bms-popup-background-dark .quick-toggle { background-color: rgba(255, 255, 255, 0.1); }\n";
         let css = shell_popups(&mocha, bms);
-        // Base (#1e1e2e) for the popups, surface (#313244) for cards.
-        assert!(css.contains(
-            ".bms-popup-surface-dark.bms-popup-surface-dark .quick-settings { background-color: rgba(30, 30, 46, 0.9) !important; }"
-        ));
-        assert!(css.contains(
-            ".bms-popup-surface-light.bms-popup-surface-light .message-list .message:hover { background-color: rgba("
+        let has = |line: &str| assert!(css.lines().any(|l| l == line), "missing {line}\n{css}");
+        // Fills keep Blur my Shell's alpha in base (#1e1e2e); cards in surface (#313244).
+        has(
+            ".bms-popup-surface-dark.bms-popup-surface-dark .quick-settings { background-color: rgba(30, 30, 46, 0.5) !important; }",
+        );
+        has(
+            ".bms-popup-surface-light.bms-popup-surface-light .message-list .message:hover { background-color: rgba(49, 50, 68, 0.4) !important; }",
+        );
+        // Dark cards stay its faint overlay, in the palette's text (#cdd6f4).
+        has(
+            ".bms-popup-surface-dark.bms-popup-surface-dark .message-list .message { background-color: rgba(205, 214, 244, 0.07) !important; }",
+        );
+        // Its transparent style keeps a readable minimum.
+        has(
+            ".bms-popup-surface-transparent.bms-popup-surface-transparent .popup-menu-content { background-color: rgba(30, 30, 46, 0.5) !important; }",
+        );
+        // Opaque fills while its blur is off; overlays need none.
+        has(
+            ".recoolor-solid-popups.bms-popup-surface-dark.bms-popup-surface-dark .quick-settings { background-color: rgba(30, 30, 46, 1) !important; }",
+        );
+        assert!(!css.contains(
+            ".recoolor-solid-popups.bms-popup-surface-dark.bms-popup-surface-dark .message-list"
         ));
         // Not where it paints nothing, nor its other mode.
         assert!(!css.contains("media-control"));
@@ -398,10 +510,7 @@ mod tests {
         let osd = ".bms-popup-surface-light .osd-window { background: rgba(255, 255, 255, 0.65) !important; }";
         assert!(
             shell_popups(&latte, osd)
-                .contains("osd-window { background-color: rgba(76, 79, 105, 0.9)")
-        );
-        assert!(
-            shell_popups(&mocha, &osd.replace("light", "dark")).contains("rgba(30, 30, 46, 0.9)")
+                .contains("osd-window { background-color: rgba(76, 79, 105, 0.65)")
         );
     }
 
@@ -423,7 +532,7 @@ mod tests {
         assert!(css.contains(".switcher-list { background-color: #eff1f5 !important; }"));
         assert!(css.contains(".switcher-arrow { color: #4c4f69 !important; }"));
         let switcher = ".bms-popup-surface-light .switcher-list { background: rgba(255, 255, 255, 0.65) !important; }";
-        assert!(shell_popups(&latte, switcher).contains("rgba(239, 241, 245, 0.9)"));
+        assert!(shell_popups(&latte, switcher).contains("rgba(239, 241, 245, 0.65)"));
         // Dark style keeps GNOME's own.
         assert!(!shell(&palette("catppuccin-mocha"), "").contains(".switcher-list"));
     }
@@ -431,11 +540,16 @@ mod tests {
     #[test]
     fn searchlight_takes_the_palette() {
         let latte = palette("catppuccin-latte");
-        let css = searchlight(&latte);
+        let css = searchlight(&latte, None);
         assert!(css.contains(
-            "#searchLight #searchLightBorder { background-color: rgba(239, 241, 245, 0.9); }"
+            "#searchLight #searchLightBox { background-color: rgba(239, 241, 245, 0.65); }"
         ));
         assert!(css.contains("#searchLight #searchLightBox * { color: #4c4f69 !important; }"));
+        // As see-through as Blur my Shell's popups in that style.
+        let bms = ".bms-popup-surface-dark .popup-menu-content { background: rgba(30, 30, 33, 0.4) !important; }";
+        assert!(
+            searchlight(&palette("catppuccin-mocha"), Some(bms)).contains("rgba(30, 30, 46, 0.4)")
+        );
     }
 
     #[test]
@@ -478,12 +592,28 @@ mod tests {
         let latte = palette("catppuccin-latte");
         let out = recolor(
             &latte,
-            ".d { color: st-mix(#fafafb, #222226, 9%); background: white; }",
+            ".d { color: st-mix(#fafafb, #222226, 9%); background: white; }\n\
+             .e { color: white; background-color: whitesmoke; }",
         );
+        // White cards take the surface (#ccd0da); white text stays near white.
         assert_eq!(
             out,
-            ".d { color: st-mix(#eff1f5, #4c4f69, 9%); background: #f7f8fa; }"
+            ".d { color: st-mix(#eff1f5, #4c4f69, 9%); background: #ccd0da; }\n\
+             .e { color: #f7f8fa; background-color: #ebedf2; }"
         );
+    }
+
+    #[test]
+    fn popovers_and_cards_take_the_palettes_own_colors() {
+        let hex = |h: &str| Color::from_hex(h).unwrap();
+        for id in ["catppuccin-mocha", "everforest-dark"] {
+            let p = palette(id);
+            assert_eq!(map(hex("#36363a"), &p, false), p.colors.base);
+            assert_eq!(map(hex("#47474c"), &p, false), p.colors.surface);
+        }
+        let latte = palette("catppuccin-latte");
+        assert_eq!(map(hex("#fafafb"), &latte, false), latte.colors.base);
+        assert_eq!(map(WHITE, &latte, false), latte.colors.surface);
     }
 
     #[test]
@@ -491,10 +621,10 @@ mod tests {
         let mocha = palette("catppuccin-mocha");
         let c = &mocha.colors;
         let hex = |s: &str| Color::from_hex(s).unwrap();
-        assert_eq!(map(hex("#cd9309"), &mocha), c.yellow);
-        assert_eq!(map(hex("#ff7800"), &mocha), c.orange);
-        assert_eq!(map(hex("#c01c28"), &mocha), c.red);
-        assert_eq!(map(hex("#3584e4"), &mocha), c.blue);
-        assert_eq!(map(hex("#2ec27e"), &mocha), c.green);
+        assert_eq!(map(hex("#cd9309"), &mocha, false), c.yellow);
+        assert_eq!(map(hex("#ff7800"), &mocha, false), c.orange);
+        assert_eq!(map(hex("#c01c28"), &mocha, false), c.red);
+        assert_eq!(map(hex("#3584e4"), &mocha, false), c.blue);
+        assert_eq!(map(hex("#2ec27e"), &mocha, false), c.green);
     }
 }

@@ -383,12 +383,14 @@ fn set_shell(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resul
         return Err("turn on the User Themes extension (in Extensions) first".into());
     }
     let css = desktop::shell_css(palette, &dirs.data)?;
-    let mut popups = desktop::blur_my_shell_css(&dirs.data)
-        .map(|bms| recoolor_core::css::shell_popups(palette, &bms))
+    let bms = desktop::blur_my_shell_css(&dirs.data);
+    let mut popups = bms
+        .as_deref()
+        .map(|bms| recoolor_core::css::shell_popups(palette, bms))
         .unwrap_or_default();
     if desktop::searchlight_installed(&dirs.data) {
         popups.push('\n');
-        popups.push_str(&recoolor_core::css::searchlight(palette));
+        popups.push_str(&recoolor_core::css::searchlight(palette, bms.as_deref()));
     }
     let popups_changed = set_popups(dirs, &popups)?;
     let changed = popups_changed

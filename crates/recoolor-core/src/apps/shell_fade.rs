@@ -77,6 +77,22 @@ function fadeEnabled() {
     }
 }
 
+// Blur my Shell's popup settings, from the schema it ships; null without it.
+function blurMyShellPopupSettings() {
+    const bms = Main.extensionManager.lookup('blur-my-shell@aunetx');
+    const dir = bms?.dir.get_child('schemas');
+    if (!dir?.query_exists(null))
+        return null;
+    try {
+        const source = Gio.SettingsSchemaSource.new_from_directory(
+            dir.get_path(), Gio.SettingsSchemaSource.get_default(), false);
+        const schema = source.lookup('org.gnome.shell.extensions.blur-my-shell.popup', true);
+        return schema ? new Gio.Settings({settings_schema: schema}) : null;
+    } catch {
+        return null;
+    }
+}
+
 // Recoolor's lock screen choice: {image, blur}, or no image.
 function lockScreen() {
     const keyFile = config();
@@ -153,11 +169,42 @@ export default class Recoolor extends Extension {
             if (fadeEnabled())
                 this.Freeze();
         });
+
+        // Blur my Shell's popups: see-through over its blur, solid while that blur
+        // is off (Recoolor's stylesheet keys its solid colors to this class).
+        // Extensions start in no set order, so also when Blur my Shell loads.
+        this._extensionState = Main.extensionManager.connect('extension-state-changed',
+            (_manager, extension) => {
+                if (extension.uuid === 'blur-my-shell@aunetx')
+                    this._watchBlurMyShell();
+            });
+        this._watchBlurMyShell();
+    }
+
+    _watchBlurMyShell() {
+        if (this._bmsChanged)
+            this._bmsPopup.disconnect(this._bmsChanged);
+        this._bmsPopup = blurMyShellPopupSettings();
+        this._bmsChanged = this._bmsPopup?.connect('changed::blur', () => this._syncSolidPopups());
+        this._syncSolidPopups();
+    }
+
+    _syncSolidPopups() {
+        if (this._bmsPopup && !this._bmsPopup.get_boolean('blur'))
+            Main.uiGroup.add_style_class_name('recoolor-solid-popups');
+        else
+            Main.uiGroup.remove_style_class_name('recoolor-solid-popups');
     }
 
     disable() {
         this._interface.disconnect(this._interfaceChanged);
         this._interface = null;
+        Main.extensionManager.disconnect(this._extensionState);
+        if (this._bmsChanged)
+            this._bmsPopup.disconnect(this._bmsChanged);
+        this._bmsChanged = 0;
+        this._bmsPopup = null;
+        Main.uiGroup.remove_style_class_name('recoolor-solid-popups');
         UnlockDialog.UnlockDialog.prototype._createBackground = this._originalCreateBackground;
         Gio.bus_unown_name(this._name);
         this._dbus.unexport();
@@ -198,7 +245,9 @@ export default class Recoolor extends Extension {
             GLib.source_remove(this._timeout);
         this._timeout = 0;
         const cover = this._cover;
-        if (!cover || !cover.visible)
+        // Already fading: easing again would stop that fade, whose end hides the
+        // cover at once (Apply and the watcher can both ask).
+        if (!cover || !cover.visible || cover.get_transition('opacity'))
             return;
         cover.ease({
             opacity: 0,
