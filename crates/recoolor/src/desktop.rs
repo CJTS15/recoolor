@@ -389,18 +389,16 @@ pub fn adw_gtk3_installed(data_home: &Path) -> bool {
 }
 
 /// Whether GTK3 Flatpak apps can use adw-gtk3: it is a Flatpak runtime of its own.
+/// Looks in Flatpak's user and system installations, without running `flatpak`.
 pub fn adw_gtk3_flatpak() -> bool {
-    Command::new("flatpak")
-        .args(["info", "org.gtk.Gtk3theme.adw-gtk3"])
-        .output()
-        .is_ok_and(|o| o.status.success())
+    let runtime = "flatpak/runtime/org.gtk.Gtk3theme.adw-gtk3";
+    std::iter::once(glib::user_data_dir().join(runtime))
+        .chain(std::iter::once(Path::new("/var/lib").join(runtime)))
+        .any(|dir| dir.is_dir())
 }
 
 pub fn flatpak_installed() -> bool {
-    Command::new("flatpak")
-        .arg("--version")
-        .output()
-        .is_ok_and(|o| o.status.success())
+    glib::find_program_in_path("flatpak").is_some()
 }
 
 /// Turns the `recoolor watch` user service on or off. On writes the unit and (re)starts
@@ -412,11 +410,17 @@ pub fn set_watch(config_home: &Path, on: bool) -> Result<(), String> {
         let exe = exe
             .to_str()
             .ok_or("the path to recoolor is not valid UTF-8, so systemd cannot run it")?;
-        service::install(config_home, exe).map_err(|e| e.to_string())?;
-        systemctl(&["daemon-reload"])?;
-        systemctl(&["enable", service::UNIT_NAME])?;
-        // restart, not start, so a running watcher picks up a new binary.
-        systemctl(&["restart", service::UNIT_NAME])
+        // The unit names the binary, so an unchanged unit means the running watcher
+        // is already the right one: leave it, it follows changes by itself.
+        if service::install(config_home, exe).map_err(|e| e.to_string())? {
+            systemctl(&["daemon-reload"])?;
+            systemctl(&["enable", service::UNIT_NAME])?;
+            systemctl(&["restart", service::UNIT_NAME])
+        } else if systemctl(&["is-active", "--quiet", service::UNIT_NAME]).is_err() {
+            systemctl(&["enable", "--now", service::UNIT_NAME])
+        } else {
+            Ok(())
+        }
     } else if service::is_installed(config_home) {
         // Remove the unit even if systemd no longer knows it, then report.
         let stopped = systemctl(&["disable", "--now", service::UNIT_NAME]);

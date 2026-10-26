@@ -43,12 +43,18 @@ pub fn unit(exe: &str) -> String {
 }
 
 /// Writes the unit, replacing an older one of Recoolor's but never someone else's.
-pub fn install(config_home: &Path, exe: &str) -> Result<(), ApplyError> {
+/// Returns whether the file changed, so systemd needs to reload it.
+pub fn install(config_home: &Path, exe: &str) -> Result<bool, ApplyError> {
     let path = unit_path(config_home);
     if is_foreign(&path)? {
         return Err(ApplyError::Foreign { path });
     }
-    write_atomic(&path, &unit(exe))
+    let text = unit(exe);
+    if fs::read_to_string(&path).is_ok_and(|old| old == text) {
+        return Ok(false);
+    }
+    write_atomic(&path, &text)?;
+    Ok(true)
 }
 
 /// Removes Recoolor's unit. Returns whether there was one; a foreign file is left alone.
