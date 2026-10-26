@@ -353,6 +353,17 @@ pub fn fish_installed() -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
+/// btop writes its config on first run.
+pub fn btop_installed(config_home: &Path) -> bool {
+    config_home.join("btop/btop.conf").is_file()
+}
+
+/// Running btops reread their config, and so the theme, on SIGUSR2. None
+/// running is fine.
+pub fn reload_btop() {
+    let _ = Command::new("pkill").args(["-USR2", "-x", "btop"]).status();
+}
+
 /// VS Code keeps its user settings here once it has run.
 pub fn vscode_installed(config_home: &Path) -> bool {
     config_home.join("Code/User").is_dir()
