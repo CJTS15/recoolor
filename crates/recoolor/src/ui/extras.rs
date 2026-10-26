@@ -1,5 +1,5 @@
 //! The "Also Apply To" rows (Flatpak apps, GNOME Shell, icons and cursors) and the
-//! "Apps" rows (Ptyxis, fish, VS Code, and hints for Slack and the login screen).
+//! "Apps" rows (Ptyxis, fish, btop, VS Code, and hints for Slack and the login screen).
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -27,6 +27,7 @@ pub struct ExtrasRows {
     pub slack: gtk::Button,
     ptyxis: adw::SwitchRow,
     fish: adw::SwitchRow,
+    btop: adw::SwitchRow,
     vscode: adw::SwitchRow,
     firefox: adw::SwitchRow,
     thunderbird: adw::SwitchRow,
@@ -205,6 +206,12 @@ impl ExtrasRows {
             desktop::fish_installed(),
             "fish is not installed",
         );
+        let btop = app_switch(
+            "btop",
+            "Selects a generated “recoolor” theme; changes open windows",
+            dirs.is_some_and(|d| desktop::btop_installed(&d.config)),
+            "Open btop once first",
+        );
         let vscode = app_switch(
             "VS Code",
             "Selects a generated “Recoolor” theme; Reset brings yours back",
@@ -280,6 +287,7 @@ impl ExtrasRows {
         for row in [
             &ptyxis,
             &fish,
+            &btop,
             &vscode,
             &text_editor,
             &firefox,
@@ -299,6 +307,7 @@ impl ExtrasRows {
             slack,
             ptyxis,
             fish,
+            btop,
             vscode,
             firefox,
             thunderbird,
@@ -332,6 +341,7 @@ impl ExtrasRows {
             (&self.adw_gtk3, extras.adw_gtk3),
             (&self.ptyxis, extras.ptyxis),
             (&self.fish, extras.fish),
+            (&self.btop, extras.btop),
             (&self.vscode, extras.vscode),
             (&self.firefox, extras.firefox),
             (&self.thunderbird, extras.thunderbird),
@@ -402,6 +412,7 @@ impl ExtrasRows {
             cursors: chosen(&self.cursors, &self.cursor_names),
             ptyxis: self.ptyxis.is_active(),
             fish: self.fish.is_active(),
+            btop: self.btop.is_active(),
             vscode: self.vscode.is_active(),
             firefox: self.firefox.is_active(),
             thunderbird: self.thunderbird.is_active(),

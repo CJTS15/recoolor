@@ -1,6 +1,6 @@
 //! Everything Recoolor changes, applied and undone together. The GTK stylesheets are
 //! always written; Flatpak access, the Shell, icon and cursor themes, and the app
-//! configs (Ptyxis, fish, VS Code) are extras the user turns on. Shared by the
+//! configs (Ptyxis, fish, btop, VS Code) are extras the user turns on. Shared by the
 //! window and the command line.
 
 use std::path::{Path, PathBuf};
@@ -10,7 +10,7 @@ use gtk::gio;
 use gtk::gio::prelude::*;
 use gtk::glib;
 use recoolor_core::apps::{
-    self, firefox, fish, gtksourceview, kdeglobals, ptyxis, shell_fade, spotifast, vscode,
+    self, btop, firefox, fish, gtksourceview, kdeglobals, ptyxis, shell_fade, spotifast, vscode,
 };
 use recoolor_core::palette::{self, Palette};
 use recoolor_core::state::{self, State};
@@ -90,6 +90,7 @@ pub struct Extras {
     pub cursors: Option<String>,
     pub ptyxis: bool,
     pub fish: bool,
+    pub btop: bool,
     pub vscode: bool,
     pub firefox: bool,
     pub spotifast: bool,
@@ -134,6 +135,7 @@ pub fn current(dirs: &Dirs) -> Extras {
         // A built-in palette leaves no file, so the record alone says it is on.
         ptyxis: state.ptyxis_previous.is_some(),
         fish: apps::is_ours(&fish::path(&dirs.config)),
+        btop: state.btop_previous.is_some(),
         vscode: state.vscode_previous.is_some()
             && desktop::home().is_ok_and(|h| vscode::extension_installed(&h)),
         firefox: desktop::home()
@@ -294,6 +296,10 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
             set_ptyxis(dirs, &mut state, when(extras.ptyxis)),
         ),
         ("fish", set_fish(dirs, when(extras.fish).map(|l| l.now))),
+        (
+            "btop",
+            set_btop(dirs, &mut state, when(extras.btop).map(|l| l.now)),
+        ),
         (
             "VS Code",
             set_vscode(dirs, &mut state, when(extras.vscode).map(|l| l.now)),
@@ -609,6 +615,37 @@ fn set_fish(dirs: &Dirs, palette: Option<&Palette>) -> Result<(), String> {
         None => fish::remove(&dirs.config).map(|_| ()),
     }
     .map_err(|e| e.to_string())
+}
+
+fn set_btop(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Result<(), String> {
+    let err = |e: ApplyError| e.to_string();
+    let conf = btop::conf_path(&dirs.config);
+    let text = btop::read_conf(&conf).map_err(err)?;
+    let wanted = match palette {
+        None => {
+            btop::remove_theme(&dirs.config).map_err(err)?;
+            let Some(previous) = state.btop_previous.take() else {
+                return Ok(());
+            };
+            previous
+        }
+        Some(p) => {
+            if !conf.exists() {
+                return Err("open btop once first, so it has a config file".into());
+            }
+            btop::write_theme(&dirs.config, &btop::render(p)).map_err(err)?;
+            state.btop_previous.get_or_insert_with(|| {
+                btop::current_theme(&text).unwrap_or_else(|| btop::DEFAULT_THEME.into())
+            });
+            btop::theme_path(&dirs.config).display().to_string()
+        }
+    };
+    let selected = btop::set_theme(&text, &wanted);
+    if selected != text {
+        btop::write_conf(&conf, &selected).map_err(err)?;
+    }
+    desktop::reload_btop();
+    Ok(())
 }
 
 /// The Shell extension's two jobs: Screen Fade, and the lock screen image (tinted

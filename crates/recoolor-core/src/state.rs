@@ -33,6 +33,9 @@ pub struct State {
     /// the key was not in `settings.json`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vscode_previous: Option<String>,
+    /// btop's `color_theme`, `Default` when `btop.conf` had none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub btop_previous: Option<String>,
     /// GNOME's `color-scheme`, when Recoolor turned `default` into `prefer-light`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color_scheme_previous: Option<String>,
@@ -136,6 +139,7 @@ mod tests {
             cursors_previous: None,
             ptyxis_previous: Some("Tokyo Night".into()),
             vscode_previous: Some(String::new()),
+            btop_previous: Some("Default".into()),
             color_scheme_previous: Some("default".into()),
             background_previous: Some(Background {
                 picture_uri: "file:///usr/share/backgrounds/a.jxl".into(),

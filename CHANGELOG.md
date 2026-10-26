@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- btop: a generated theme, selected in `btop.conf`; open btop windows switch
+  too.
+
 ## 0.2.0 — 2026-10-26
 
 - Wallpapers: a light and a dark wallpaper, tinted to the palette (Match
