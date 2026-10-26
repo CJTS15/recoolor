@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.0.1 — 2026-10-26
 
+- VS Code: follows every Apply and light/dark switch. It stopped reloading the
+  theme after the first change, and showed an old palette after switching
+  between light and dark.
 - GNOME Shell with Blur my Shell: quick settings, the calendar and notification
   cards take the palette's window and card colors at 90%, instead of Blur my
   Shell's own white or grey. This goes through Recoolor's Shell extension (an
