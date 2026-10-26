@@ -240,15 +240,7 @@ fn map(color: Color, palette: &Palette) -> Color {
     // ponytail: every shade of a hue maps to one palette color, so Adwaita's
     // hover/pressed variants of red or yellow look the same. Keep the lightness
     // offset if that shows.
-    match hue {
-        h if !(15.0..345.0).contains(&h) => c.red,
-        // Adwaita's warning yellows sit at 42°.
-        h if h < 40.0 => c.orange,
-        h if h < 70.0 => c.yellow,
-        h if h < 170.0 => c.green,
-        h if h < 260.0 => c.blue,
-        _ => c.purple,
-    }
+    palette.hue_color(hue)
 }
 
 #[cfg(test)]

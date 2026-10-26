@@ -11,6 +11,7 @@ pub mod service;
 pub mod shell;
 pub mod state;
 pub mod themes;
+pub mod wallpaper;
 
 pub use apply::{ApplyError, CssState, GtkConfig, RestoreOutcome, Status, Toolkit};
 pub use color::Color;

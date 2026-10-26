@@ -3,7 +3,7 @@
 //! configs (Ptyxis, fish, VS Code) are extras the user turns on. Shared by the
 //! window and the command line.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gtk::gio;
@@ -12,6 +12,10 @@ use gtk::glib;
 use recoolor_core::apps::{self, firefox, fish, ptyxis, shell_fade, spotifast, vscode};
 use recoolor_core::palette::{self, Palette};
 use recoolor_core::state::{self, State};
+use recoolor_core::wallpaper::{self, Tint};
+
+/// How strongly wallpapers are tinted until the user picks otherwise.
+pub const DEFAULT_STRENGTH: u8 = 85;
 use recoolor_core::{
     ApplyError, CssState, GtkConfig, RestoreOutcome, Toolkit, flatpak, paths, shell,
 };
@@ -69,6 +73,8 @@ pub struct Extras {
     /// The desktop wallpaper in light style, and in dark style (`None`: the same).
     pub wallpaper: Option<String>,
     pub wallpaper_dark: Option<String>,
+    pub wallpaper_tint: Tint,
+    pub wallpaper_strength: u8,
     pub cursors: Option<String>,
     pub ptyxis: bool,
     pub fish: bool,
@@ -99,6 +105,8 @@ pub fn current(dirs: &Dirs) -> Extras {
         icons: interface(&state.icons_previous, "icon-theme"),
         wallpaper: state.wallpaper_source.clone(),
         wallpaper_dark: state.wallpaper_source_dark.clone(),
+        wallpaper_tint: state.wallpaper_tint.unwrap_or_default(),
+        wallpaper_strength: state.wallpaper_strength.unwrap_or(DEFAULT_STRENGTH),
         cursors: interface(&state.cursors_previous, "cursor-theme"),
         // A built-in palette leaves no file, so the record alone says it is on.
         ptyxis: state.ptyxis_previous.is_some(),
@@ -229,14 +237,7 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
             "Light style",
             set_light_shell(&mut state, extras.shell && look.is_some()),
         ),
-        (
-            "Wallpaper",
-            set_wallpaper(
-                &mut state,
-                extras.wallpaper.as_deref().filter(|_| look.is_some()),
-                extras.wallpaper_dark.as_deref().filter(|_| look.is_some()),
-            ),
-        ),
+        ("Wallpaper", set_wallpaper(dirs, &mut state, extras, look)),
         (
             "Icons",
             set_interface(
@@ -356,9 +357,21 @@ fn set_light_shell(state: &mut State, on: bool) -> Result<(), String> {
 
 /// Sets the desktop wallpaper for light and dark style (the Shell switches between
 /// them itself), or puts the user's own background back when neither is set.
-fn set_wallpaper(state: &mut State, light: Option<&str>, dark: Option<&str>) -> Result<(), String> {
+fn set_wallpaper(
+    dirs: &Dirs,
+    state: &mut State,
+    extras: &Extras,
+    look: Option<Look>,
+) -> Result<(), String> {
     let settings =
         || desktop::background_settings().ok_or("GNOME's background settings are not installed");
+    let (light, dark) = match look {
+        Some(_) => (
+            extras.wallpaper.as_deref(),
+            extras.wallpaper_dark.as_deref(),
+        ),
+        None => (None, None),
+    };
     if light.is_none() && dark.is_none() {
         if let Some(previous) = state.background_previous.clone() {
             let settings = settings()?;
@@ -373,34 +386,79 @@ fn set_wallpaper(state: &mut State, light: Option<&str>, dark: Option<&str>) -> 
         }
         state.wallpaper_source = None;
         state.wallpaper_source_dark = None;
+        state.wallpaper_tint = None;
+        state.wallpaper_strength = None;
+        wallpaper::remove_all(&dirs.data);
         return Ok(());
     }
+    let look = look.expect("checked above");
     for source in light.into_iter().chain(dark) {
         if !Path::new(source).is_file() {
             return Err(format!("{source} is not there any more"));
         }
     }
     let settings = settings()?;
+    // A wallpaper of Recoolor's own is never the user's (the state was lost);
+    // fall back to GNOME's default for that key.
+    let user_value = |key: &str| {
+        let value = settings.string(key).to_string();
+        let ours = gio::File::for_uri(&value)
+            .path()
+            .is_some_and(|p| wallpaper::is_ours(&p, &dirs.data));
+        if ours {
+            settings
+                .default_value(key)
+                .and_then(|v| v.str().map(str::to_owned))
+                .unwrap_or_default()
+        } else {
+            value
+        }
+    };
     let previous = state
         .background_previous
         .get_or_insert_with(|| state::Background {
-            picture_uri: settings.string("picture-uri").into(),
-            picture_uri_dark: settings.string("picture-uri-dark").into(),
+            picture_uri: user_value("picture-uri"),
+            picture_uri_dark: user_value("picture-uri-dark"),
             picture_options: settings.string("picture-options").into(),
         })
         .clone();
     state.wallpaper_source = light.map(str::to_owned);
     state.wallpaper_source_dark = dark.map(str::to_owned);
-    let uri = |path: &str| gio::File::for_path(path).uri().to_string();
+    state.wallpaper_tint = Some(extras.wallpaper_tint);
+    state.wallpaper_strength = Some(extras.wallpaper_strength);
+
+    // Each style's image is tinted with that style's palette.
+    let (light_palette, dark_palette) = look.pair.unwrap_or((look.now, look.now));
+    let render = |source: &str, palette: &Palette| {
+        crate::wallpaper::render(
+            &dirs.data,
+            Path::new(source),
+            palette,
+            extras.wallpaper_tint,
+            extras.wallpaper_strength,
+        )
+    };
+    let light_file = light.map(|s| render(s, light_palette)).transpose()?;
+    let dark_file = dark
+        .or(light)
+        .map(|s| render(s, dark_palette))
+        .transpose()?;
+    let keep: Vec<&Path> = light_file
+        .iter()
+        .chain(&dark_file)
+        .map(PathBuf::as_path)
+        .collect();
+    let uri = |path: &PathBuf| gio::File::for_path(path).uri().to_string();
     // Light alone covers both styles; dark alone leaves light style as it was.
-    let light_uri = light.map_or(previous.picture_uri, uri);
-    let dark_uri = dark.or(light).map_or(previous.picture_uri_dark, uri);
+    let light_uri = light_file.as_ref().map_or(previous.picture_uri, uri);
+    let dark_uri = dark_file.as_ref().map_or(previous.picture_uri_dark, uri);
     // Only on a change: the Shell redraws the background on every write.
     for (key, value) in [("picture-uri", light_uri), ("picture-uri-dark", dark_uri)] {
         if settings.string(key) != value {
             desktop::set_string(&settings, key, &value)?;
         }
     }
+    wallpaper::prune(&dirs.data, &keep);
     Ok(())
 }
 

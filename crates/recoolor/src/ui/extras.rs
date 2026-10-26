@@ -9,7 +9,14 @@ use adw::prelude::*;
 use recoolor_core::{flatpak, themes};
 
 use crate::desktop::{self, Dirs};
-use crate::targets::Extras;
+use crate::targets::{DEFAULT_STRENGTH, Extras};
+use recoolor_core::wallpaper::Tint;
+
+const TINTS: [(Tint, &str); 3] = [
+    (Tint::Match, "Match Palette"),
+    (Tint::Mono, "Mono"),
+    (Tint::None, "Original"),
+];
 
 const UNSET: &str = "Not Set by Recoolor";
 
@@ -32,6 +39,8 @@ pub struct ExtrasRows {
     wallpaper_row: WallpaperRow,
     wallpaper_dark: Rc<RefCell<Option<String>>>,
     wallpaper_dark_row: WallpaperRow,
+    tint: adw::ComboRow,
+    strength: gtk::Scale,
     // Grow when a theme Recoolor set lies outside the scanned folders.
     icon_names: RefCell<Vec<String>>,
     cursor_names: RefCell<Vec<String>>,
@@ -115,8 +124,26 @@ impl ExtrasRows {
             "picture-uri-dark",
             wallpaper_dark.clone(),
         );
+        let tint = adw::ComboRow::builder()
+            .title("Wallpaper Tint")
+            .model(&gtk::StringList::new(&TINTS.map(|(_, label)| label)))
+            .build();
+        let strength = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 100.0, 5.0);
+        strength.set_width_request(160);
+        strength.set_valign(gtk::Align::Center);
+        strength.set_value(f64::from(DEFAULT_STRENGTH));
+        strength.update_property(&[gtk::accessible::Property::Label("Tint Strength")]);
+        let strength_row = adw::ActionRow::builder().title("Tint Strength").build();
+        strength_row.add_suffix(&strength);
+        // Strength means nothing for the original image.
+        tint.bind_property("selected", &strength_row, "sensitive")
+            .transform_to(|_, i: u32| Some(TINTS[i as usize].0 != Tint::None))
+            .sync_create()
+            .build();
         group.add(&wallpaper_row.row);
         group.add(&wallpaper_dark_row.row);
+        group.add(&tint);
+        group.add(&strength_row);
         group.add(&icons);
         group.add(&cursors);
 
@@ -219,6 +246,8 @@ impl ExtrasRows {
             wallpaper_row,
             wallpaper_dark,
             wallpaper_dark_row,
+            tint,
+            strength,
             icon_names: RefCell::new(icon_names),
             cursor_names: RefCell::new(cursor_names),
         }
@@ -262,6 +291,10 @@ impl ExtrasRows {
         *self.wallpaper_dark.borrow_mut() = extras.wallpaper_dark.clone();
         self.wallpaper_dark_row
             .show(extras.wallpaper_dark.as_deref());
+        let pos = TINTS.iter().position(|(t, _)| *t == extras.wallpaper_tint);
+        self.tint.set_selected(pos.unwrap_or(0) as u32);
+        self.strength
+            .set_value(f64::from(extras.wallpaper_strength));
         select(&self.icons, &self.icon_names, &extras.icons);
         select(&self.cursors, &self.cursor_names, &extras.cursors);
     }
@@ -280,6 +313,10 @@ impl ExtrasRows {
             icons: chosen(&self.icons, &self.icon_names),
             wallpaper: self.wallpaper.borrow().clone(),
             wallpaper_dark: self.wallpaper_dark.borrow().clone(),
+            wallpaper_tint: TINTS
+                .get(self.tint.selected() as usize)
+                .map_or(Tint::default(), |(t, _)| *t),
+            wallpaper_strength: self.strength.value().round().clamp(0.0, 100.0) as u8,
             cursors: chosen(&self.cursors, &self.cursor_names),
             ptyxis: self.ptyxis.is_active(),
             fish: self.fish.is_active(),

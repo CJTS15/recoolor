@@ -45,6 +45,11 @@ pub struct State {
     /// A separate image for dark style; without one, dark uses `wallpaper_source`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wallpaper_source_dark: Option<String>,
+    /// How the wallpapers are tinted, and how strongly (0 to 100).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wallpaper_tint: Option<crate::wallpaper::Tint>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wallpaper_strength: Option<u8>,
 }
 
 /// The `org.gnome.desktop.background` keys Recoolor changes.
@@ -130,6 +135,8 @@ mod tests {
             }),
             wallpaper_source: Some("/home/me/Pictures/tree.png".into()),
             wallpaper_source_dark: Some("/home/me/Pictures/tree-night.png".into()),
+            wallpaper_tint: Some(crate::wallpaper::Tint::Mono),
+            wallpaper_strength: Some(70),
         };
         state.save(&path).unwrap();
         assert_eq!(State::load(&path).unwrap(), state);
