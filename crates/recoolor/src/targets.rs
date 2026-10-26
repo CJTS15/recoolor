@@ -850,6 +850,17 @@ fn set_vscode(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resu
     let selected = vscode::set_theme(&text, vscode::label(palette));
     if selected != text {
         vscode::write_settings(&path, &selected).map_err(err)?;
+        // VS Code reads each theme file once per session and watches only the current
+        // one, so the theme it switches to may be stale. Rewrite it unchanged once VS
+        // Code has switched, which reloads it.
+        // ponytail: the CLI exits before this runs; only the window and the watcher get it.
+        let theme = vscode::theme_path(&home, palette.variant);
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            if let Ok(contents) = std::fs::read(&theme) {
+                let _ = std::fs::write(&theme, contents);
+            }
+        });
     }
     Ok(())
 }
