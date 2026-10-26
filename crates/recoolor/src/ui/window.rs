@@ -17,8 +17,8 @@ use super::extras::ExtrasRows;
 use super::palette_card::PaletteCard;
 use super::preview;
 use crate::desktop::{self, Dirs};
-use crate::log;
 use crate::targets::{self, Choice};
+use crate::{log, restart};
 
 // The window lives as long as the app, so handlers hold it strongly.
 struct Window {
@@ -536,6 +536,16 @@ impl Window {
         };
         let (name, palettes) = (choice.name(), choice.to_vec());
         let (extras, dark_now) = (self.extras.get(), self.style.is_dark());
+        // Apps that only read the new colors at startup. Chrome's GTK mode reads
+        // Recoolor's GTK colors whether or not anything else is on.
+        let restartable: Vec<&'static restart::App> = [
+            (extras.firefox, &restart::FIREFOX),
+            (extras.thunderbird, &restart::THUNDERBIRD),
+            (true, &restart::CHROME),
+        ]
+        .into_iter()
+        .filter_map(|(on, app)| on.then_some(app))
+        .collect();
 
         self.run_busy(
             move || {
@@ -544,7 +554,7 @@ impl Window {
             },
             move |w, result| match result {
                 Ok(problems) => {
-                    w.toast(&format!("Applied {name}. Restart apps to see it."));
+                    w.offer_restart(&name, restartable);
                     if !problems.is_empty() {
                         w.alert("Some parts were not applied", &problems.join("\n\n"));
                     }
@@ -584,7 +594,7 @@ impl Window {
     fn run_busy<T: Send + 'static>(
         self: &Rc<Self>,
         work: impl FnOnce() -> T + Send + 'static,
-        done: impl FnOnce(&Self, T) + 'static,
+        done: impl FnOnce(&Rc<Self>, T) + 'static,
     ) {
         if self.busy.replace(true) {
             return;
@@ -665,6 +675,49 @@ impl Window {
             card.set_applied(applied.contains(&palette.id.as_str()));
         }
         statuses
+    }
+
+    /// The "Applied" toast, with Restart Now when any of `apps` is open.
+    fn offer_restart(self: &Rc<Self>, name: &str, apps: Vec<&'static restart::App>) {
+        let open: Vec<&'static restart::App> = apps
+            .into_iter()
+            .filter(|a| restart::is_running(a))
+            .collect();
+        if open.is_empty() {
+            self.toast(&format!("Applied {name}. Restart apps to see it."));
+            return;
+        }
+        let names = open
+            .iter()
+            .map(|a| a.name)
+            .collect::<Vec<_>>()
+            .join(" and ");
+        let text = format!("Applied {name}. Restart {names} to see it.");
+        log::info(&text);
+        let toast = adw::Toast::builder()
+            .title(text)
+            .button_label("Restart Now")
+            .timeout(10)
+            .build();
+        let w = self.clone();
+        toast.connect_button_clicked(move |_| {
+            let apps = open.clone();
+            w.run_busy(
+                move || {
+                    apps.iter()
+                        .filter_map(|app| restart::restart(app).err())
+                        .collect::<Vec<_>>()
+                },
+                |w, problems| {
+                    if problems.is_empty() {
+                        w.toast("Restarted");
+                    } else {
+                        w.alert("Some apps were not restarted", &problems.join("\n\n"));
+                    }
+                },
+            );
+        });
+        self.toasts.add_toast(toast);
     }
 
     fn toast(&self, text: &str) {
