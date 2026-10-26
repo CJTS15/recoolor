@@ -25,10 +25,12 @@ pub fn profiles(home: &Path) -> Vec<PathBuf> {
     ])
 }
 
-/// Thunderbird's profile folders (its own and Flathub's).
+/// Thunderbird's profile folders (the older `~/.thunderbird`, the XDG location
+/// newer releases use, and Flathub's).
 pub fn thunderbird_profiles(home: &Path) -> Vec<PathBuf> {
     profiles_in(&[
         home.join(".thunderbird"),
+        home.join(".config/thunderbird"),
         home.join(".var/app/org.mozilla.Thunderbird/.thunderbird"),
     ])
 }
