@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.0 — 2026-10-26
+
+- Wallpapers: a light and a dark wallpaper, tinted to the palette (Match
+  Palette keeps the image and moves its colors to the palette's; Mono is a
+  gradient map), with a strength slider.
+- Lock screen: an image of its own, sharp or blurred, through Recoolor's Shell
+  extension (now called "Recoolor"; log out and back in once).
+- adw-gtk3 for GTK3 apps: full GTK3 coverage through the libadwaita-style theme.
+- Qt and KDE apps through a KDE color scheme; other Qt apps follow GTK3.
+- GNOME Text Editor (a style scheme for light and dark) and Thunderbird.
+- Restart Now: after Apply, Firefox, Thunderbird and Chrome can be restarted
+  for you, each instance coming back as it was.
+- Fixes: Apply and Reset run off the main thread; the state file is locked
+  between the window, the command line and the service; Apply no longer
+  reloads systemd when nothing changed; Flathub Firefox and XDG Thunderbird
+  profiles are found.
+
 ## Unreleased
 
 - Apply and Reset run in the background, so the window no longer freezes while

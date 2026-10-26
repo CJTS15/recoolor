@@ -4,7 +4,7 @@
 %global debug_package %{nil}
 
 Name:           recoolor
-Version:        0.1.2
+Version:        0.2.0
 Release:        1%{?dist}
 Summary:        Recolor GNOME and its apps with one palette
 License:        GPL-3.0-or-later
@@ -23,12 +23,14 @@ BuildRequires:  appstream
 Requires:       gtk4 >= 4.16
 Requires:       libadwaita >= 1.6
 Recommends:     gnome-shell-extension-user-theme
+Recommends:     adw-gtk3-theme
 
 %description
 Pick a palette (Catppuccin, Dracula, Tokyo Night, Gruvbox, Rosé Pine, Nord and
-more) and Recoolor recolors GTK and libadwaita apps, GNOME Shell, Flatpak apps,
-the accent color, and apps such as Ptyxis, fish, VS Code, Firefox and Spotifast.
-Reset puts everything back the way it was.
+more) and Recoolor recolors GTK and libadwaita apps, GNOME Shell, Qt and Flatpak
+apps, the wallpaper and lock screen, the accent color, and apps such as Ptyxis,
+fish, Text Editor, VS Code, Firefox and Thunderbird. Reset puts everything back
+the way it was.
 
 %prep
 %autosetup -a 1
@@ -62,6 +64,9 @@ appstreamcli validate --no-net %{buildroot}%{_metainfodir}/%{app_id}.metainfo.xm
 %{_datadir}/icons/hicolor/symbolic/apps/%{app_id}-symbolic.svg
 
 %changelog
+* Mon Oct 26 2026 CJ Sabijon <cjsabijon@gmail.com> - 0.2.0-1
+- Wallpapers and lock screen, adw-gtk3, Text Editor, Thunderbird, Qt and KDE apps, Restart Now.
+
 * Fri Oct 23 2026 CJ Sabijon <cjsabijon@gmail.com> - 0.1.2-1
 - Accent picker, Calendar restart, selection highlights, translucent popups with Blur my Shell.
 
