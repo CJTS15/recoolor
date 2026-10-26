@@ -102,6 +102,7 @@ pub fn run(args: &[&str]) -> Result<(), String> {
             println!("shell: {shell}");
             println!("icons: {}", or_unset(extras.icons));
             println!("wallpaper: {}", or_unset(extras.wallpaper));
+            println!("dark wallpaper: {}", or_unset(extras.wallpaper_dark));
             println!("cursors: {}", or_unset(extras.cursors));
             match desktop::interface_settings().and_then(|s| desktop::accent_choice(&s)) {
                 Some(name) => println!("accent: the palette's {name} (picked in Settings)"),

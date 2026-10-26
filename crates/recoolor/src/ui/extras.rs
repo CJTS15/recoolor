@@ -30,6 +30,8 @@ pub struct ExtrasRows {
     cursors: adw::ComboRow,
     wallpaper: Rc<RefCell<Option<String>>>,
     wallpaper_row: WallpaperRow,
+    wallpaper_dark: Rc<RefCell<Option<String>>>,
+    wallpaper_dark_row: WallpaperRow,
     // Grow when a theme Recoolor set lies outside the scanned folders.
     icon_names: RefCell<Vec<String>>,
     cursor_names: RefCell<Vec<String>>,
@@ -100,8 +102,21 @@ impl ExtrasRows {
         group.add(&flatpak);
         group.add(&shell);
         let wallpaper = Rc::new(RefCell::new(None));
-        let wallpaper_row = WallpaperRow::new(wallpaper.clone());
+        let wallpaper_row = WallpaperRow::new(
+            "Wallpaper",
+            "Not Set by Recoolor",
+            "picture-uri",
+            wallpaper.clone(),
+        );
+        let wallpaper_dark = Rc::new(RefCell::new(None));
+        let wallpaper_dark_row = WallpaperRow::new(
+            "Dark Style Wallpaper",
+            "Same as Light Style",
+            "picture-uri-dark",
+            wallpaper_dark.clone(),
+        );
         group.add(&wallpaper_row.row);
+        group.add(&wallpaper_dark_row.row);
         group.add(&icons);
         group.add(&cursors);
 
@@ -202,6 +217,8 @@ impl ExtrasRows {
             cursors,
             wallpaper,
             wallpaper_row,
+            wallpaper_dark,
+            wallpaper_dark_row,
             icon_names: RefCell::new(icon_names),
             cursor_names: RefCell::new(cursor_names),
         }
@@ -242,6 +259,9 @@ impl ExtrasRows {
         };
         *self.wallpaper.borrow_mut() = extras.wallpaper.clone();
         self.wallpaper_row.show(extras.wallpaper.as_deref());
+        *self.wallpaper_dark.borrow_mut() = extras.wallpaper_dark.clone();
+        self.wallpaper_dark_row
+            .show(extras.wallpaper_dark.as_deref());
         select(&self.icons, &self.icon_names, &extras.icons);
         select(&self.cursors, &self.cursor_names, &extras.cursors);
     }
@@ -259,6 +279,7 @@ impl ExtrasRows {
             shell: self.shell.is_active(),
             icons: chosen(&self.icons, &self.icon_names),
             wallpaper: self.wallpaper.borrow().clone(),
+            wallpaper_dark: self.wallpaper_dark.borrow().clone(),
             cursors: chosen(&self.cursors, &self.cursor_names),
             ptyxis: self.ptyxis.is_active(),
             fish: self.fish.is_active(),
@@ -318,17 +339,24 @@ fn show_gdm_setup(button: &gtk::Button, theme: Option<&std::path::Path>) {
     dialog.present(Some(button));
 }
 
-/// The wallpaper row: a thumbnail, Choose and Use Current, and a button to stop
-/// setting it. The choice takes effect on Apply, like the other rows.
+/// A wallpaper row: a thumbnail, Choose and Use Current, and a button to clear
+/// it. The choice takes effect on Apply, like the other rows.
 #[derive(Clone)]
 struct WallpaperRow {
     row: adw::ActionRow,
     picture: gtk::Picture,
     clear: gtk::Button,
+    unset: &'static str,
 }
 
 impl WallpaperRow {
-    fn new(chosen: Rc<RefCell<Option<String>>>) -> Self {
+    /// `key` is the background setting Use Current reads.
+    fn new(
+        title: &str,
+        unset: &'static str,
+        key: &'static str,
+        chosen: Rc<RefCell<Option<String>>>,
+    ) -> Self {
         let picture = gtk::Picture::builder()
             .content_fit(gtk::ContentFit::Cover)
             .width_request(64)
@@ -339,7 +367,7 @@ impl WallpaperRow {
             .build();
         let clear = gtk::Button::builder()
             .icon_name("edit-clear-symbolic")
-            .tooltip_text("Stop Setting the Wallpaper")
+            .tooltip_text("Clear")
             .valign(gtk::Align::Center)
             .css_classes(["flat"])
             .build();
@@ -353,7 +381,7 @@ impl WallpaperRow {
             .label("Choose…")
             .valign(gtk::Align::Center)
             .build();
-        let row = adw::ActionRow::builder().title("Wallpaper").build();
+        let row = adw::ActionRow::builder().title(title).build();
         row.add_suffix(&picture);
         row.add_suffix(&clear);
         row.add_suffix(&current);
@@ -362,6 +390,7 @@ impl WallpaperRow {
             row,
             picture,
             clear,
+            unset,
         };
 
         let pick = {
@@ -376,7 +405,7 @@ impl WallpaperRow {
         let p = pick.clone();
         current.connect_clicked(move |_| {
             let path = desktop::background_settings()
-                .and_then(|s| gtk::gio::File::for_uri(&s.string("picture-uri")).path())
+                .and_then(|s| gtk::gio::File::for_uri(&s.string(key)).path())
                 .map(|p| p.display().to_string());
             if path.is_some() {
                 p(path);
@@ -413,8 +442,7 @@ impl WallpaperRow {
         let name = path
             .and_then(|p| Path::new(p).file_name())
             .map(|n| n.to_string_lossy());
-        self.row
-            .set_subtitle(name.as_deref().unwrap_or("Not Set by Recoolor"));
+        self.row.set_subtitle(name.as_deref().unwrap_or(self.unset));
         self.picture.set_filename(path);
         self.picture.set_visible(path.is_some());
         self.clear.set_visible(path.is_some());

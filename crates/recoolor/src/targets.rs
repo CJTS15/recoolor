@@ -66,8 +66,9 @@ pub struct Extras {
     pub flatpak: bool,
     pub shell: bool,
     pub icons: Option<String>,
-    /// The image to use as the desktop wallpaper.
+    /// The desktop wallpaper in light style, and in dark style (`None`: the same).
     pub wallpaper: Option<String>,
+    pub wallpaper_dark: Option<String>,
     pub cursors: Option<String>,
     pub ptyxis: bool,
     pub fish: bool,
@@ -97,6 +98,7 @@ pub fn current(dirs: &Dirs) -> Extras {
         ),
         icons: interface(&state.icons_previous, "icon-theme"),
         wallpaper: state.wallpaper_source.clone(),
+        wallpaper_dark: state.wallpaper_source_dark.clone(),
         cursors: interface(&state.cursors_previous, "cursor-theme"),
         // A built-in palette leaves no file, so the record alone says it is on.
         ptyxis: state.ptyxis_previous.is_some(),
@@ -232,6 +234,7 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
             set_wallpaper(
                 &mut state,
                 extras.wallpaper.as_deref().filter(|_| look.is_some()),
+                extras.wallpaper_dark.as_deref().filter(|_| look.is_some()),
             ),
         ),
         (
@@ -351,12 +354,12 @@ fn set_light_shell(state: &mut State, on: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Sets `source` as the desktop wallpaper for both styles, or puts the user's
-/// own background back.
-fn set_wallpaper(state: &mut State, source: Option<&str>) -> Result<(), String> {
+/// Sets the desktop wallpaper for light and dark style (the Shell switches between
+/// them itself), or puts the user's own background back when neither is set.
+fn set_wallpaper(state: &mut State, light: Option<&str>, dark: Option<&str>) -> Result<(), String> {
     let settings =
         || desktop::background_settings().ok_or("GNOME's background settings are not installed");
-    let Some(source) = source else {
+    if light.is_none() && dark.is_none() {
         if let Some(previous) = state.background_previous.clone() {
             let settings = settings()?;
             for (key, value) in [
@@ -369,25 +372,33 @@ fn set_wallpaper(state: &mut State, source: Option<&str>) -> Result<(), String> 
             state.background_previous = None;
         }
         state.wallpaper_source = None;
+        state.wallpaper_source_dark = None;
         return Ok(());
-    };
-    if !Path::new(source).is_file() {
-        return Err(format!("{source} is not there any more"));
+    }
+    for source in light.into_iter().chain(dark) {
+        if !Path::new(source).is_file() {
+            return Err(format!("{source} is not there any more"));
+        }
     }
     let settings = settings()?;
-    state
+    let previous = state
         .background_previous
         .get_or_insert_with(|| state::Background {
             picture_uri: settings.string("picture-uri").into(),
             picture_uri_dark: settings.string("picture-uri-dark").into(),
             picture_options: settings.string("picture-options").into(),
-        });
-    state.wallpaper_source = Some(source.to_owned());
-    let uri = gio::File::for_path(source).uri();
+        })
+        .clone();
+    state.wallpaper_source = light.map(str::to_owned);
+    state.wallpaper_source_dark = dark.map(str::to_owned);
+    let uri = |path: &str| gio::File::for_path(path).uri().to_string();
+    // Light alone covers both styles; dark alone leaves light style as it was.
+    let light_uri = light.map_or(previous.picture_uri, uri);
+    let dark_uri = dark.or(light).map_or(previous.picture_uri_dark, uri);
     // Only on a change: the Shell redraws the background on every write.
-    for key in ["picture-uri", "picture-uri-dark"] {
-        if settings.string(key) != uri {
-            desktop::set_string(&settings, key, &uri)?;
+    for (key, value) in [("picture-uri", light_uri), ("picture-uri-dark", dark_uri)] {
+        if settings.string(key) != value {
+            desktop::set_string(&settings, key, &value)?;
         }
     }
     Ok(())

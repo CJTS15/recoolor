@@ -42,6 +42,9 @@ pub struct State {
     /// The image the user picked; Recoolor's wallpapers always start from it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wallpaper_source: Option<String>,
+    /// A separate image for dark style; without one, dark uses `wallpaper_source`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wallpaper_source_dark: Option<String>,
 }
 
 /// The `org.gnome.desktop.background` keys Recoolor changes.
@@ -126,6 +129,7 @@ mod tests {
                 picture_options: "zoom".into(),
             }),
             wallpaper_source: Some("/home/me/Pictures/tree.png".into()),
+            wallpaper_source_dark: Some("/home/me/Pictures/tree-night.png".into()),
         };
         state.save(&path).unwrap();
         assert_eq!(State::load(&path).unwrap(), state);
