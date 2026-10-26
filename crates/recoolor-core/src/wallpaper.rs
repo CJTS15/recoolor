@@ -72,11 +72,6 @@ pub fn prune(data_home: &Path, keep: &[&Path]) {
     }
 }
 
-/// Removes the folder and everything in it.
-pub fn remove_all(data_home: &Path) {
-    let _ = fs::remove_dir_all(dir(data_home));
-}
-
 const GRID: usize = 33;
 
 /// A 3D lookup table of the tint, built once per palette, tint and strength.

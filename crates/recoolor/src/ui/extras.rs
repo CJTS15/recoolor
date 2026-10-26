@@ -41,6 +41,9 @@ pub struct ExtrasRows {
     wallpaper_dark_row: WallpaperRow,
     tint: adw::ComboRow,
     strength: gtk::Scale,
+    lock: Rc<RefCell<Option<String>>>,
+    lock_row: WallpaperRow,
+    lock_blur: adw::SwitchRow,
     // Grow when a theme Recoolor set lies outside the scanned folders.
     icon_names: RefCell<Vec<String>>,
     cursor_names: RefCell<Vec<String>>,
@@ -144,6 +147,25 @@ impl ExtrasRows {
         group.add(&wallpaper_dark_row.row);
         group.add(&tint);
         group.add(&strength_row);
+        let lock = Rc::new(RefCell::new(None));
+        let lock_row = WallpaperRow::new(
+            "Lock Screen",
+            "Same as Desktop, Blurred",
+            "picture-uri",
+            lock.clone(),
+        );
+        let lock_blur = adw::SwitchRow::builder()
+            .title("Blur Lock Screen")
+            .subtitle("A lock screen image of its own goes through Recoolor's Shell extension: log out and back in once after first setting one")
+            .build();
+        // Blur only applies to an image of its own; GNOME always blurs the desktop's.
+        lock_row
+            .clear
+            .bind_property("visible", &lock_blur, "sensitive")
+            .sync_create()
+            .build();
+        group.add(&lock_row.row);
+        group.add(&lock_blur);
         group.add(&icons);
         group.add(&cursors);
 
@@ -248,6 +270,9 @@ impl ExtrasRows {
             wallpaper_dark_row,
             tint,
             strength,
+            lock,
+            lock_row,
+            lock_blur,
             icon_names: RefCell::new(icon_names),
             cursor_names: RefCell::new(cursor_names),
         }
@@ -295,6 +320,9 @@ impl ExtrasRows {
         self.tint.set_selected(pos.unwrap_or(0) as u32);
         self.strength
             .set_value(f64::from(extras.wallpaper_strength));
+        *self.lock.borrow_mut() = extras.lock_image.clone();
+        self.lock_row.show(extras.lock_image.as_deref());
+        self.lock_blur.set_active(extras.lock_blur);
         select(&self.icons, &self.icon_names, &extras.icons);
         select(&self.cursors, &self.cursor_names, &extras.cursors);
     }
@@ -317,6 +345,8 @@ impl ExtrasRows {
                 .get(self.tint.selected() as usize)
                 .map_or(Tint::default(), |(t, _)| *t),
             wallpaper_strength: self.strength.value().round().clamp(0.0, 100.0) as u8,
+            lock_image: self.lock.borrow().clone(),
+            lock_blur: self.lock_blur.is_active(),
             cursors: chosen(&self.cursors, &self.cursor_names),
             ptyxis: self.ptyxis.is_active(),
             fish: self.fish.is_active(),

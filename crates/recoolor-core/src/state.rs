@@ -50,6 +50,9 @@ pub struct State {
     pub wallpaper_tint: Option<crate::wallpaper::Tint>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wallpaper_strength: Option<u8>,
+    /// The image the user picked for the lock screen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lock_source: Option<String>,
 }
 
 /// The `org.gnome.desktop.background` keys Recoolor changes.
@@ -137,6 +140,7 @@ mod tests {
             wallpaper_source_dark: Some("/home/me/Pictures/tree-night.png".into()),
             wallpaper_tint: Some(crate::wallpaper::Tint::Mono),
             wallpaper_strength: Some(70),
+            lock_source: Some("/home/me/Pictures/lock.jxl".into()),
         };
         state.save(&path).unwrap();
         assert_eq!(State::load(&path).unwrap(), state);
