@@ -895,6 +895,15 @@ pub fn watch(dirs: Dirs) -> Result<(), String> {
     // (such as the cursor Recoolor sets itself), so only act on a real change.
     let last = std::cell::RefCell::new(None);
     let sync = move |settings: &gio::Settings| {
+        // An update replaced recoolor on disk: exit so systemd (Restart=on-failure)
+        // starts the new one, which syncs as it starts. Otherwise this old one keeps
+        // running until the next login.
+        if std::fs::read_link("/proc/self/exe")
+            .is_ok_and(|p| p.to_string_lossy().ends_with(" (deleted)"))
+        {
+            log::info("recoolor watch: recoolor was updated, restarting");
+            std::process::exit(1);
+        }
         let now = (
             desktop::prefers_dark(settings),
             desktop::accent_choice(settings),
