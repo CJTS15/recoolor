@@ -377,14 +377,18 @@ pub fn home() -> Result<PathBuf, String> {
 /// Blur my Shell's translucent popup rules when it is installed.
 pub fn shell_css(palette: &Palette, data_home: &Path) -> Result<String, String> {
     let mut css = css::shell(palette, &shell_default_css(palette.variant)?);
-    let bms = std::iter::once(data_home.to_owned())
-        .chain(glib::system_data_dirs())
-        .map(|d| d.join("gnome-shell/extensions/blur-my-shell@aunetx/stylesheet.css"))
-        .find_map(|p| std::fs::read_to_string(p).ok());
-    if let Some(bms) = bms {
+    if let Some(bms) = blur_my_shell_css(data_home) {
         css.push_str(&css::shell_blur(palette, &bms));
     }
     Ok(css)
+}
+
+/// The installed Blur my Shell's stylesheet.
+pub fn blur_my_shell_css(data_home: &Path) -> Option<String> {
+    std::iter::once(data_home.to_owned())
+        .chain(glib::system_data_dirs())
+        .map(|d| d.join("gnome-shell/extensions/blur-my-shell@aunetx/stylesheet.css"))
+        .find_map(|p| std::fs::read_to_string(p).ok())
 }
 
 /// Whether the adw-gtk3 theme is installed where GTK3 looks for themes.

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- GNOME Shell with Blur my Shell: quick settings, the calendar and notification
+  cards take the palette's window and card colors at 90%, instead of Blur my
+  Shell's own white or grey. This goes through Recoolor's Shell extension (an
+  extension's styles outrank any Shell theme), so log out and back in once.
+
 ## 1.0.0 — 2026-10-26
 
 - First stable release.
