@@ -67,6 +67,11 @@ pub fn background_settings() -> Option<gio::Settings> {
     settings("org.gnome.desktop.background", &[], None)
 }
 
+/// GNOME Text Editor's settings, or `None` without it.
+pub fn text_editor_settings() -> Option<gio::Settings> {
+    settings("org.gnome.TextEditor", &[], None)
+}
+
 /// GNOME's interface settings, or `None` off GNOME.
 pub fn interface_settings() -> Option<gio::Settings> {
     settings(INTERFACE_SCHEMA, &[], None)
