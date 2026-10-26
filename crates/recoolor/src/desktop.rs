@@ -131,9 +131,22 @@ pub fn user_theme_enabled() -> bool {
     })
 }
 
-/// Makes the Shell load Recoolor's theme again. The extension only reloads when the
-/// theme name changes, so set it away and back.
+/// Makes the Shell load Recoolor's theme again: through Recoolor's extension when it
+/// runs, in one load. Otherwise set the User Themes name away and back, the only
+/// change it reloads on, which loads the default theme in between (a flash).
 pub fn reload_shell_theme(settings: &gio::Settings) -> Result<(), String> {
+    let reloaded = running(shell_fade::BUS_NAME)
+        && session_call(
+            shell_fade::BUS_NAME,
+            shell_fade::OBJECT_PATH,
+            shell_fade::BUS_NAME,
+            "ReloadTheme",
+            None,
+        )
+        .is_ok();
+    if reloaded {
+        return Ok(());
+    }
     set_string(settings, "name", "")?;
     set_string(settings, "name", shell::THEME_NAME)
 }

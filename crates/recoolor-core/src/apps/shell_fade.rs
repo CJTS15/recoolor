@@ -51,22 +51,40 @@ const IFACE = `<node>
   <interface name="io.github.cjts15.Recoolor.Shell">
     <method name="Freeze"/>
     <method name="Fade"/>
+    <method name="ReloadTheme"/>
   </interface>
 </node>`;
 
-const FADE_MS = 500;
-const MAX_FREEZE_MS = 5000;
+const FADE_MS = 700;
+// Lets apps finish redrawing under the still before it fades.
+const SETTLE_MS = 200;
+const MAX_FREEZE_MS = 3000;
+
+function config() {
+    const file = GLib.build_filenamev([GLib.get_user_data_dir(), 'recoolor', 'shell-extension.conf']);
+    const keyFile = new GLib.KeyFile();
+    try {
+        keyFile.load_from_file(file, GLib.KeyFileFlags.NONE);
+    } catch {}
+    return keyFile;
+}
+
+function fadeEnabled() {
+    try {
+        return config().get_boolean('Screen Fade', 'enabled');
+    } catch {
+        return false;
+    }
+}
 
 // Recoolor's lock screen choice: {image, blur}, or no image.
 function lockScreen() {
-    const file = GLib.build_filenamev([GLib.get_user_data_dir(), 'recoolor', 'shell-extension.conf']);
-    const config = new GLib.KeyFile();
+    const keyFile = config();
     try {
-        config.load_from_file(file, GLib.KeyFileFlags.NONE);
-        const image = config.get_string('Lock Screen', 'image');
+        const image = keyFile.get_string('Lock Screen', 'image');
         let blur = true;
         try {
-            blur = config.get_boolean('Lock Screen', 'blur');
+            blur = keyFile.get_boolean('Lock Screen', 'blur');
         } catch {}
         return GLib.file_test(image, GLib.FileTest.EXISTS) ? {image, blur} : {};
     } catch {
@@ -121,9 +139,25 @@ export default class Recoolor extends Extension {
         this._dbus.export(Gio.DBus.session, '/io/github/cjts15/Recoolor/Shell');
         this._name = Gio.bus_own_name_on_connection(Gio.DBus.session,
             'io.github.cjts15.Recoolor.Shell', Gio.BusNameOwnerFlags.NONE, null, null);
+
+        // A light/dark or accent switch: hold a still of the old look while
+        // Recoolor's watcher restyles everything; it calls Fade when done.
+        this._interface = new Gio.Settings({schema_id: 'org.gnome.desktop.interface'});
+        const keys = ['color-scheme', 'accent-color'];
+        this._seen = Object.fromEntries(keys.map(k => [k, this._interface.get_string(k)]));
+        this._interfaceChanged = this._interface.connect('changed', (settings, key) => {
+            // GSettings also reports keys whose value did not change.
+            if (!keys.includes(key) || settings.get_string(key) === this._seen[key])
+                return;
+            this._seen[key] = settings.get_string(key);
+            if (fadeEnabled())
+                this.Freeze();
+        });
     }
 
     disable() {
+        this._interface.disconnect(this._interfaceChanged);
+        this._interface = null;
         UnlockDialog.UnlockDialog.prototype._createBackground = this._originalCreateBackground;
         Gio.bus_unown_name(this._name);
         this._dbus.unexport();
@@ -169,12 +203,19 @@ export default class Recoolor extends Extension {
         cover.ease({
             opacity: 0,
             duration: FADE_MS,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            delay: SETTLE_MS,
+            mode: Clutter.AnimationMode.EASE_IN_OUT_CUBIC,
             onStopped: () => {
                 cover.hide();
                 cover.content = null;
             },
         });
+    }
+
+    // Loads the Shell theme again from its file: one load, where setting the
+    // User Themes name away and back loads the default theme in between.
+    ReloadTheme() {
+        Main.loadTheme();
     }
 }
 "#;
