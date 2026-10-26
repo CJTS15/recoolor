@@ -31,6 +31,7 @@ pub struct ExtrasRows {
     firefox: adw::SwitchRow,
     thunderbird: adw::SwitchRow,
     text_editor: adw::SwitchRow,
+    kde: adw::SwitchRow,
     spotifast: adw::SwitchRow,
     fade: adw::SwitchRow,
     flatpak: adw::SwitchRow,
@@ -232,6 +233,10 @@ impl ExtrasRows {
             desktop::text_editor_settings().is_some(),
             "GNOME Text Editor is not installed",
         );
+        let kde = adw::SwitchRow::builder()
+            .title("Qt and KDE Apps")
+            .subtitle("A KDE color scheme for KDE apps and Qt Flatpaks such as Kdenlive; other Qt apps follow GTK3. Restart them to see it")
+            .build();
         let spotifast = app_switch(
             "Spotifast",
             "Adds a “Recoolor” theme; pick it once in Spotifast → Settings → Appearance",
@@ -279,6 +284,7 @@ impl ExtrasRows {
             &text_editor,
             &firefox,
             &thunderbird,
+            &kde,
             &spotifast,
         ] {
             apps_group.add(row);
@@ -297,6 +303,7 @@ impl ExtrasRows {
             firefox,
             thunderbird,
             text_editor,
+            kde,
             spotifast,
             fade,
             flatpak,
@@ -329,6 +336,7 @@ impl ExtrasRows {
             (&self.firefox, extras.firefox),
             (&self.thunderbird, extras.thunderbird),
             (&self.text_editor, extras.text_editor),
+            (&self.kde, extras.kde),
             (&self.spotifast, extras.spotifast),
             (&self.fade, extras.fade),
         ] {
@@ -398,6 +406,7 @@ impl ExtrasRows {
             firefox: self.firefox.is_active(),
             thunderbird: self.thunderbird.is_active(),
             text_editor: self.text_editor.is_active(),
+            kde: self.kde.is_active(),
             spotifast: self.spotifast.is_active(),
             fade: self.fade.is_active(),
         }
