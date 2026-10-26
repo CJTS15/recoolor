@@ -5,6 +5,13 @@
 - Firefox and Thunderbird follow light/dark live, without a restart, when
   Follow System Style is on: both palettes go in, the dark one under
   `prefers-color-scheme`. Restart them once after updating and applying.
+- GNOME Shell popups and cards are exactly the palette's window and card colors.
+- Blur my Shell: popups follow its blur instead of a fixed 90%: its own
+  transparency in the palette's colors, solid while its popup blur is off
+  (switching live), and readable in its transparent style. SearchLightNG
+  matches. Log out and back in once after updating.
+- Screen Fade no longer cuts short when Apply and the watch service both ask to
+  fade.
 
 ## 1.1.0 — 2026-10-26
 

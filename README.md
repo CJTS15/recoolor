@@ -69,7 +69,7 @@ recoolor show catppuccin-mocha [gtk3|shell]       # print the generated CSS
 | **GTK3 apps** | Fully with **adw-gtk3 for GTK3 Apps** on (needs `adw-gtk3-theme`), which switches GTK3 to the libadwaita look. Without it, the common widgets are recolored directly. |
 | **Qt and KDE apps** | **Qt and KDE Apps** writes a KDE color scheme (`~/.config/kdeglobals`) for KDE apps and Qt Flatpaks such as Kdenlive. Other Qt apps use Qt's GTK3 theme on GNOME, so they follow the GTK3 colors. |
 | **Flatpak apps** | Through read-only access to the GTK settings folders. Recoolor adds it to your Flatpak overrides if it is not already there. |
-| **GNOME Shell** | The top bar, quick settings, calendar and overview, recolored from the installed Shell's own stylesheet. Needs the User Themes extension. With Blur my Shell's "Preserve shell theme", popups and notifications take the palette at 90%, so the blur still shows faintly (through Recoolor's Shell extension; log out and back in once). |
+| **GNOME Shell** | The top bar, quick settings, calendar and overview, recolored from the installed Shell's own stylesheet. Needs the User Themes extension. Popups and cards take the palette's window and card colors. With Blur my Shell's "Preserve shell theme" they follow its blur: see-through as much as it makes them, solid when its popup blur is off (through Recoolor's Shell extension; log out and back in once). |
 | **Wallpaper** | A light and a dark wallpaper, optionally tinted to the palette: **Match Palette** keeps the image and moves its colors to the palette's, **Mono** makes a gradient map. |
 | **Lock screen** | An image of its own, sharp or blurred (GNOME otherwise shows the desktop wallpaper, blurred). |
 | **Icons and cursors** | Any installed theme. |
