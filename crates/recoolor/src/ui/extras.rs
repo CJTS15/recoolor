@@ -29,6 +29,8 @@ pub struct ExtrasRows {
     fish: adw::SwitchRow,
     vscode: adw::SwitchRow,
     firefox: adw::SwitchRow,
+    thunderbird: adw::SwitchRow,
+    text_editor: adw::SwitchRow,
     spotifast: adw::SwitchRow,
     fade: adw::SwitchRow,
     flatpak: adw::SwitchRow,
@@ -217,6 +219,19 @@ impl ExtrasRows {
                 .is_some_and(|h| !recoolor_core::apps::firefox::profiles(h).is_empty()),
             "Open Firefox once first",
         );
+        let thunderbird = app_switch(
+            "Thunderbird",
+            "Colors Thunderbird's window through userChrome; restart Thunderbird to see it",
+            home.as_ref()
+                .is_some_and(|h| !recoolor_core::apps::firefox::thunderbird_profiles(h).is_empty()),
+            "Open Thunderbird once first",
+        );
+        let text_editor = app_switch(
+            "Text Editor",
+            "A Recoolor style scheme for light and dark, selected in GNOME Text Editor",
+            desktop::text_editor_settings().is_some(),
+            "GNOME Text Editor is not installed",
+        );
         let spotifast = app_switch(
             "Spotifast",
             "Adds a “Recoolor” theme; pick it once in Spotifast → Settings → Appearance",
@@ -257,7 +272,15 @@ impl ExtrasRows {
         gdm_row.add_suffix(&setup);
 
         let apps_group = adw::PreferencesGroup::builder().title("Apps").build();
-        for row in [&ptyxis, &fish, &vscode, &firefox, &spotifast] {
+        for row in [
+            &ptyxis,
+            &fish,
+            &vscode,
+            &text_editor,
+            &firefox,
+            &thunderbird,
+            &spotifast,
+        ] {
             apps_group.add(row);
         }
         apps_group.add(&chrome_row);
@@ -272,6 +295,8 @@ impl ExtrasRows {
             fish,
             vscode,
             firefox,
+            thunderbird,
+            text_editor,
             spotifast,
             fade,
             flatpak,
@@ -302,6 +327,8 @@ impl ExtrasRows {
             (&self.fish, extras.fish),
             (&self.vscode, extras.vscode),
             (&self.firefox, extras.firefox),
+            (&self.thunderbird, extras.thunderbird),
+            (&self.text_editor, extras.text_editor),
             (&self.spotifast, extras.spotifast),
             (&self.fade, extras.fade),
         ] {
@@ -369,6 +396,8 @@ impl ExtrasRows {
             fish: self.fish.is_active(),
             vscode: self.vscode.is_active(),
             firefox: self.firefox.is_active(),
+            thunderbird: self.thunderbird.is_active(),
+            text_editor: self.text_editor.is_active(),
             spotifast: self.spotifast.is_active(),
             fade: self.fade.is_active(),
         }

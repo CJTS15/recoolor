@@ -56,6 +56,9 @@ pub struct State {
     /// GNOME's `gtk-theme`, before Recoolor switched GTK3 to adw-gtk3.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gtk_theme_previous: Option<String>,
+    /// GNOME Text Editor's `style-scheme`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_editor_previous: Option<String>,
 }
 
 /// The `org.gnome.desktop.background` keys Recoolor changes.
@@ -145,6 +148,7 @@ mod tests {
             wallpaper_strength: Some(70),
             lock_source: Some("/home/me/Pictures/lock.jxl".into()),
             gtk_theme_previous: Some("Adwaita".into()),
+            text_editor_previous: Some("Adwaita-dark".into()),
         };
         state.save(&path).unwrap();
         assert_eq!(State::load(&path).unwrap(), state);

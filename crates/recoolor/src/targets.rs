@@ -9,7 +9,9 @@ use std::rc::Rc;
 use gtk::gio;
 use gtk::gio::prelude::*;
 use gtk::glib;
-use recoolor_core::apps::{self, firefox, fish, ptyxis, shell_fade, spotifast, vscode};
+use recoolor_core::apps::{
+    self, firefox, fish, gtksourceview, ptyxis, shell_fade, spotifast, vscode,
+};
 use recoolor_core::palette::{self, Palette};
 use recoolor_core::state::{self, State};
 use recoolor_core::wallpaper::{self, Tint};
@@ -81,6 +83,8 @@ pub struct Extras {
     pub lock_blur: bool,
     /// GTK3 apps use the adw-gtk3 theme, recolored through its named colors.
     pub adw_gtk3: bool,
+    pub text_editor: bool,
+    pub thunderbird: bool,
     pub cursors: Option<String>,
     pub ptyxis: bool,
     pub fish: bool,
@@ -117,6 +121,12 @@ pub fn current(dirs: &Dirs) -> Extras {
         lock_image: state.lock_source.clone(),
         lock_blur: shell.lock_blur,
         adw_gtk3: state.gtk_theme_previous.is_some(),
+        text_editor: state.text_editor_previous.is_some(),
+        thunderbird: desktop::home().is_ok_and(|h| {
+            firefox::thunderbird_profiles(&h)
+                .iter()
+                .any(|p| firefox::is_applied(p))
+        }),
         cursors: interface(&state.cursors_previous, "cursor-theme"),
         // A built-in palette leaves no file, so the record alone says it is on.
         ptyxis: state.ptyxis_previous.is_some(),
@@ -285,7 +295,26 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
             "VS Code",
             set_vscode(dirs, &mut state, when(extras.vscode).map(|l| l.now)),
         ),
-        ("Firefox", set_firefox(when(extras.firefox).map(|l| l.now))),
+        (
+            "Firefox",
+            set_mozilla(
+                "Firefox",
+                firefox::profiles,
+                when(extras.firefox).map(|l| l.now),
+            ),
+        ),
+        (
+            "Thunderbird",
+            set_mozilla(
+                "Thunderbird",
+                firefox::thunderbird_profiles,
+                when(extras.thunderbird).map(|l| l.now),
+            ),
+        ),
+        (
+            "Text Editor",
+            set_text_editor(dirs, &mut state, when(extras.text_editor)),
+        ),
         (
             "Lock screen and Screen Fade",
             set_shell_extension(dirs, &mut state, extras, look),
@@ -646,10 +675,15 @@ fn set_fade(dirs: &Dirs, on: bool) -> Result<(), String> {
     }
 }
 
-fn set_firefox(palette: Option<&Palette>) -> Result<(), String> {
-    let profiles = firefox::profiles(&desktop::home()?);
+/// Firefox or Thunderbird: `profiles` finds the app's profile folders.
+fn set_mozilla(
+    app: &str,
+    profiles: fn(&Path) -> Vec<PathBuf>,
+    palette: Option<&Palette>,
+) -> Result<(), String> {
+    let profiles = profiles(&desktop::home()?);
     if palette.is_some() && profiles.is_empty() {
-        return Err("no Firefox profile found; open Firefox once first".into());
+        return Err(format!("no {app} profile found; open {app} once first"));
     }
     for profile in &profiles {
         match palette {
@@ -661,12 +695,52 @@ fn set_firefox(palette: Option<&Palette>) -> Result<(), String> {
     // Recoolor cannot set this one with an exact undo (Firefox copies user.js
     // into prefs.js), so it says so instead.
     if palette.is_some() && !profiles.iter().any(|p| firefox::stylesheets_enabled(p)) {
-        return Err(
-            "turn on toolkit.legacyUserProfileCustomizations.stylesheets in about:config, then restart Firefox"
-                .into(),
-        );
+        return Err(format!(
+            "turn on toolkit.legacyUserProfileCustomizations.stylesheets in {app}'s config editor, then restart {app}"
+        ));
     }
     Ok(())
+}
+
+/// GNOME Text Editor: Recoolor's GtkSourceView schemes (light and dark, which
+/// Text Editor switches between itself), selected in its settings.
+fn set_text_editor(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result<(), String> {
+    let Some(look) = look else {
+        gtksourceview::remove(&dirs.data).map_err(|e| e.to_string())?;
+        if let Some(previous) = state.text_editor_previous.clone() {
+            let settings = desktop::text_editor_settings()
+                .ok_or("Text Editor is gone, so its scheme was not put back")?;
+            desktop::set_string(&settings, "style-scheme", &previous)?;
+            state.text_editor_previous = None;
+        }
+        return Ok(());
+    };
+    let settings = desktop::text_editor_settings().ok_or("GNOME Text Editor is not installed")?;
+    let (light, dark) = look.pair.unwrap_or((look.now, look.now));
+    let path = gtksourceview::path(&dirs.data, gtksourceview::SCHEME);
+    let before = std::fs::read_to_string(&path).ok();
+    gtksourceview::write(&dirs.data, light, dark).map_err(|e| e.to_string())?;
+    let current = settings.string("style-scheme").to_string();
+    let previous = state
+        .text_editor_previous
+        .get_or_insert_with(|| {
+            // Recoolor's own scheme is never the user's; fall back to the default.
+            if current.starts_with(gtksourceview::SCHEME) {
+                "Adwaita".to_owned()
+            } else {
+                current.clone()
+            }
+        })
+        .clone();
+    if current.starts_with(gtksourceview::SCHEME) {
+        // Text Editor reloads a scheme when it switches to it, so switch away and
+        // back, but only when the files changed.
+        if before == std::fs::read_to_string(&path).ok() {
+            return Ok(());
+        }
+        desktop::set_string(&settings, "style-scheme", &previous)?;
+    }
+    desktop::set_string(&settings, "style-scheme", gtksourceview::SCHEME)
 }
 
 fn set_spotifast(dirs: &Dirs, palette: Option<&Palette>) -> Result<(), String> {

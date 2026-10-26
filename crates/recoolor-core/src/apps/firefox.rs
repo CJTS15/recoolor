@@ -1,8 +1,9 @@
-//! Firefox: `chrome/recoolor.css` in each profile sets the color variables that
-//! firefox-gnome-theme (`--gnome-*`) and Catppuccin-style userChrome files
-//! (`--ctp-*`) read, and one marked `@import` line in `userChrome.css` loads it
-//! after them. Firefox reads userChrome at startup, so it needs a restart; it also
-//! needs `toolkit.legacyUserProfileCustomizations.stylesheets` turned on.
+//! Firefox and Thunderbird: `chrome/recoolor.css` in each profile sets the color
+//! variables that firefox-gnome-theme (`--gnome-*`), Catppuccin-style userChrome
+//! files (`--ctp-*`) and Thunderbird's own chrome (`--layout-*`) read, and one
+//! marked `@import` line in `userChrome.css` loads it after them. Both read
+//! userChrome at startup, so they need a restart; both also need
+//! `toolkit.legacyUserProfileCustomizations.stylesheets` turned on.
 
 use std::fmt::Write;
 use std::fs;
@@ -14,16 +15,30 @@ use crate::palette::Palette;
 
 const IMPORT: &str = "@import \"recoolor.css\"; /* Added by Recoolor; Reset removes it. */";
 
-/// Profile folders listed in `profiles.ini` under the Firefox roots in `home`
-/// (`~/.mozilla/firefox`, and `~/.config/mozilla/firefox` used by newer releases).
+/// Firefox's profile folders (`~/.mozilla/firefox`, `~/.config/mozilla/firefox`
+/// used by newer releases, and Flathub's).
 pub fn profiles(home: &Path) -> Vec<PathBuf> {
-    let mut found = Vec::new();
-    for root in [
+    profiles_in(&[
         home.join(".mozilla/firefox"),
         home.join(".config/mozilla/firefox"),
-        // Firefox from Flathub.
         home.join(".var/app/org.mozilla.firefox/.mozilla/firefox"),
-    ] {
+    ])
+}
+
+/// Thunderbird's profile folders (the older `~/.thunderbird`, the XDG location
+/// newer releases use, and Flathub's).
+pub fn thunderbird_profiles(home: &Path) -> Vec<PathBuf> {
+    profiles_in(&[
+        home.join(".thunderbird"),
+        home.join(".config/thunderbird"),
+        home.join(".var/app/org.mozilla.Thunderbird/.thunderbird"),
+    ])
+}
+
+/// Profile folders listed in each root's `profiles.ini`.
+fn profiles_in(roots: &[PathBuf]) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for root in roots {
         let Ok(ini) = fs::read_to_string(root.join("profiles.ini")) else {
             continue;
         };
@@ -108,6 +123,25 @@ pub fn render(palette: &Palette) -> String {
         ("--gnome-tabbar-identity-color-orange", c.orange),
         ("--gnome-tabbar-identity-color-red", c.red),
         ("--gnome-tabbar-identity-color-purple", c.purple),
+        // Thunderbird's own chrome.
+        ("--layout-background-0", c.base),
+        ("--layout-background-1", c.mantle),
+        ("--layout-background-2", c.surface),
+        ("--layout-background-3", c.surface.mix(c.overlay, 0.25)),
+        ("--layout-background-4", c.surface.mix(c.overlay, 0.5)),
+        ("--layout-color-0", c.text),
+        ("--layout-color-1", c.text),
+        ("--layout-color-2", c.subtext),
+        ("--layout-color-3", c.overlay),
+        ("--layout-border-0", c.surface),
+        ("--layout-border-1", c.surface.mix(c.overlay, 0.5)),
+        ("--layout-border-2", c.overlay),
+        ("--selected-item-color", c.accent),
+        (
+            "--selected-item-text-color",
+            crate::css::Roles::new(palette).accent_fg,
+        ),
+        ("--color-accent-primary", c.accent),
     ];
     for (name, color) in vars {
         let _ = writeln!(css, "  {name}: {color} !important;");
@@ -217,6 +251,18 @@ mod tests {
         )
         .unwrap();
         assert_eq!(profiles(home.path()), [root.join("a.default"), abs]);
+
+        let tb = home.path().join(".thunderbird");
+        fs::create_dir_all(tb.join("x.default-release")).unwrap();
+        fs::write(
+            tb.join("profiles.ini"),
+            "[Profile0]\nIsRelative=1\nPath=x.default-release\n",
+        )
+        .unwrap();
+        assert_eq!(
+            thunderbird_profiles(home.path()),
+            [tb.join("x.default-release")]
+        );
     }
 
     #[test]
