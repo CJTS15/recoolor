@@ -311,18 +311,14 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
         ),
         (
             "Firefox",
-            set_mozilla(
-                "Firefox",
-                firefox::profiles,
-                when(extras.firefox).map(|l| l.now),
-            ),
+            set_mozilla("Firefox", firefox::profiles, when(extras.firefox)),
         ),
         (
             "Thunderbird",
             set_mozilla(
                 "Thunderbird",
                 firefox::thunderbird_profiles,
-                when(extras.thunderbird).map(|l| l.now),
+                when(extras.thunderbird),
             ),
         ),
         (
@@ -746,26 +742,31 @@ fn set_fade(dirs: &Dirs, on: bool) -> Result<(), String> {
     }
 }
 
-/// Firefox or Thunderbird: `profiles` finds the app's profile folders.
+/// Firefox or Thunderbird: `profiles` finds the app's profile folders. A pair goes
+/// in whole, so they follow light/dark without a restart.
 fn set_mozilla(
     app: &str,
     profiles: fn(&Path) -> Vec<PathBuf>,
-    palette: Option<&Palette>,
+    look: Option<Look>,
 ) -> Result<(), String> {
     let profiles = profiles(&desktop::home()?);
-    if palette.is_some() && profiles.is_empty() {
+    if look.is_some() && profiles.is_empty() {
         return Err(format!("no {app} profile found; open {app} once first"));
     }
     for profile in &profiles {
-        match palette {
-            Some(p) => firefox::apply(profile, p),
+        match look {
+            Some(Look {
+                pair: Some((light, dark)),
+                ..
+            }) => firefox::apply(profile, light, Some(dark)),
+            Some(look) => firefox::apply(profile, look.now, None),
             None => firefox::remove(profile),
         }
         .map_err(|e| e.to_string())?;
     }
     // Recoolor cannot set this one with an exact undo (Firefox copies user.js
     // into prefs.js), so it says so instead.
-    if palette.is_some() && !profiles.iter().any(|p| firefox::stylesheets_enabled(p)) {
+    if look.is_some() && !profiles.iter().any(|p| firefox::stylesheets_enabled(p)) {
         return Err(format!(
             "turn on toolkit.legacyUserProfileCustomizations.stylesheets in {app}'s config editor, then restart {app}"
         ));
