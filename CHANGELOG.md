@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 — 2026-10-26
 
 - Firefox and Thunderbird follow light/dark live, without a restart, when
   Follow System Style is on: both palettes go in, the dark one under

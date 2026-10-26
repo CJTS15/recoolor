@@ -4,7 +4,7 @@
 %global debug_package %{nil}
 
 Name:           recoolor
-Version:        1.1.0
+Version:        1.2.0
 Release:        1%{?dist}
 Summary:        Recolor GNOME and its apps with one palette
 License:        GPL-3.0-or-later
@@ -64,6 +64,9 @@ appstreamcli validate --no-net %{buildroot}%{_metainfodir}/%{app_id}.metainfo.xm
 %{_datadir}/icons/hicolor/symbolic/apps/%{app_id}-symbolic.svg
 
 %changelog
+* Mon Oct 26 2026 CJ Sabijon <cjsabijon@gmail.com> - 1.2.0-1
+- Firefox and Thunderbird follow light/dark live; Shell popups follow Blur my Shell.
+
 * Mon Oct 26 2026 CJ Sabijon <cjsabijon@gmail.com> - 1.1.0-1
 - Smooth light/dark switches, light style fixes, SearchLightNG, About menu.
 
