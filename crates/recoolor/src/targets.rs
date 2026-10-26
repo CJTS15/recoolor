@@ -387,9 +387,13 @@ fn set_shell(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resul
         return Err("turn on the User Themes extension (in Extensions) first".into());
     }
     let css = desktop::shell_css(palette, &dirs.data)?;
-    let popups = desktop::blur_my_shell_css(&dirs.data)
+    let mut popups = desktop::blur_my_shell_css(&dirs.data)
         .map(|bms| recoolor_core::css::shell_popups(palette, &bms))
         .unwrap_or_default();
+    if desktop::searchlight_installed(&dirs.data) {
+        popups.push('\n');
+        popups.push_str(&recoolor_core::css::searchlight(palette));
+    }
     let popups_changed = set_popups(dirs, &popups)?;
     let changed = popups_changed
         || std::fs::read_to_string(shell::css_path(&dirs.data)).ok() != Some(css.clone());
@@ -655,8 +659,8 @@ fn set_btop(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Result
     Ok(())
 }
 
-/// Blur my Shell's popups in the palette, in Recoolor's extension stylesheet (see
-/// `css::shell_popups`). Returns whether it changed.
+/// Blur my Shell's popups and SearchLightNG in the palette, in Recoolor's extension
+/// stylesheet (see `css::shell_popups`, `css::searchlight`). Returns whether it changed.
 fn set_popups(dirs: &Dirs, css: &str) -> Result<bool, String> {
     if !shell_fade::is_installed(&dirs.data) {
         return Ok(false);
@@ -698,7 +702,10 @@ fn set_shell_extension(
         fade: extras.fade && look.is_some(),
         lock_image: image,
         lock_blur: extras.lock_blur,
-        popups: extras.shell && look.is_some() && desktop::blur_my_shell_css(&dirs.data).is_some(),
+        popups: extras.shell
+            && look.is_some()
+            && (desktop::blur_my_shell_css(&dirs.data).is_some()
+                || desktop::searchlight_installed(&dirs.data)),
     };
     set_fade(dirs, config.wanted())?;
     shell_fade::write_config(&dirs.data, &config).map_err(|e| e.to_string())

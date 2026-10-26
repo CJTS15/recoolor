@@ -8,6 +8,11 @@
   once after updating.
 - The watch service restarts itself after an update, instead of running the old
   version until the next login.
+- Light style: the volume OSD, workspace switcher and screenshot panel stay dark
+  with light text, as in GNOME (they were light with white text under Blur my
+  Shell). The Alt+Tab switcher follows light and dark. The OSD's bar takes the
+  accent color.
+- SearchLightNG follows the palette in light and dark.
 
 ## 1.0.1 — 2026-10-26
 

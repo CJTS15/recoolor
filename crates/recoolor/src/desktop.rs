@@ -398,9 +398,22 @@ pub fn shell_css(palette: &Palette, data_home: &Path) -> Result<String, String> 
 
 /// The installed Blur my Shell's stylesheet.
 pub fn blur_my_shell_css(data_home: &Path) -> Option<String> {
+    extension_stylesheet(data_home, "blur-my-shell@aunetx")
+}
+
+/// Whether SearchLightNG is installed.
+pub fn searchlight_installed(data_home: &Path) -> bool {
+    extension_stylesheet(data_home, "search-light-ng@salix.host").is_some()
+}
+
+fn extension_stylesheet(data_home: &Path, uuid: &str) -> Option<String> {
     std::iter::once(data_home.to_owned())
         .chain(glib::system_data_dirs())
-        .map(|d| d.join("gnome-shell/extensions/blur-my-shell@aunetx/stylesheet.css"))
+        .map(|d| {
+            d.join("gnome-shell/extensions")
+                .join(uuid)
+                .join("stylesheet.css")
+        })
         .find_map(|p| std::fs::read_to_string(p).ok())
 }
 
