@@ -4,7 +4,7 @@
 %global debug_package %{nil}
 
 Name:           recoolor
-Version:        0.2.0
+Version:        1.0.0
 Release:        1%{?dist}
 Summary:        Recolor GNOME and its apps with one palette
 License:        GPL-3.0-or-later
@@ -64,6 +64,9 @@ appstreamcli validate --no-net %{buildroot}%{_metainfodir}/%{app_id}.metainfo.xm
 %{_datadir}/icons/hicolor/symbolic/apps/%{app_id}-symbolic.svg
 
 %changelog
+* Mon Oct 26 2026 CJ Sabijon <cjsabijon@gmail.com> - 1.0.0-1
+- btop. First stable release.
+
 * Mon Oct 26 2026 CJ Sabijon <cjsabijon@gmail.com> - 0.2.0-1
 - Wallpapers and lock screen, adw-gtk3, Text Editor, Thunderbird, Qt and KDE apps, Restart Now.
 

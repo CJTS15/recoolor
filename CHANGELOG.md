@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 — 2026-10-26
 
+- First stable release.
 - btop: a generated theme, selected in `btop.conf`; open btop windows switch
   too.
 
@@ -22,7 +23,9 @@
   reloads systemd when nothing changed; Flathub Firefox and XDG Thunderbird
   profiles are found.
 
-## Unreleased
+## 1.0.0 — 2026-10-26
+
+- First stable release.
 
 - Apply and Reset run in the background, so the window no longer freezes while
   they wait on systemd, D-Bus and Calendar. The Apply button shows a spinner
