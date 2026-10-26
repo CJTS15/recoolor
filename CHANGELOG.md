@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Firefox and Thunderbird follow light/dark live, without a restart, when
+  Follow System Style is on: both palettes go in, the dark one under
+  `prefers-color-scheme`. Restart them once after updating and applying.
+
 ## 1.1.0 — 2026-10-26
 
 - Smooth color changes: with Screen Fade on, switching light/dark or the accent
