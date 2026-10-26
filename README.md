@@ -1,33 +1,16 @@
 # Recoolor
 
-A theme switcher for GNOME. Pick a palette (Catppuccin, Dracula, Tokyo Night, …)
-and Recoolor recolors GTK3 and GTK4/libadwaita apps by generating the user stylesheets
-GTK loads from `~/.config/gtk-3.0/gtk.css` and `~/.config/gtk-4.0/gtk.css`.
+Recolor your whole GNOME desktop from one palette. Pick Catppuccin, Dracula, Tokyo
+Night, Gruvbox, Rosé Pine or another of the 21 bundled palettes, and Recoolor
+themes GTK and libadwaita apps, GNOME Shell, the wallpaper and lock screen, Qt
+apps, and apps with themes of their own such as Firefox, VS Code and the terminal.
+One Reset puts everything back the way it was.
 
-Run `recoolor` to open the window: pick a card to preview it on Recoolor itself, then
-Apply. Reset undoes everything Recoolor changed. The same things work from the
-command line:
-
-```sh
-recoolor list                                     # bundled and user palettes
-recoolor show catppuccin-mocha                    # print the GTK4 CSS (add `gtk3` for GTK3)
-recoolor apply catppuccin-mocha                   # write both stylesheets
-recoolor apply catppuccin-latte catppuccin-mocha  # a light/dark pair
-recoolor status
-recoolor restore                                  # undo
-```
-
-Apps read `gtk.css` once at startup, so restart them after applying. Files
-(Nautilus) and Calendar keep running after their windows close, so Apply and
-Reset restart them for you (closing any of their open windows); they open with
-the new colors next time.
-The Shell updates straight away.
-
-Requires GNOME 47 or newer (GTK 4.16, libadwaita 1.6).
+Requires GNOME 47 or newer (GTK 4.16, libadwaita 1.6). Built and tested on GNOME 50.
 
 ## Install
 
-**Fedora:** download the `recoolor-<version>.rpm` from the
+**Fedora:** download `recoolor-<version>.rpm` from the
 [latest release](https://github.com/CJTS15/recoolor/releases/latest), then:
 
 ```sh
@@ -35,7 +18,7 @@ sudo dnf install ./recoolor-*.rpm
 ```
 
 **From source:** needs `gtk4-devel libadwaita-devel` (Fedora) or
-`libgtk-4-dev libadwaita-1-dev` (Debian/Ubuntu), and a Rust toolchain.
+`libgtk-4-dev libadwaita-1-dev` (Debian/Ubuntu), and a Rust toolchain (1.89+).
 
 ```sh
 make build
@@ -47,133 +30,90 @@ To build the RPM yourself, install `rpm-build desktop-file-utils appstream` and
 run `packaging/build-rpm.sh`; it builds from the committed tree into
 `target/rpmbuild`.
 
-**Uninstall:** run `recoolor restore` (or Reset in the window) first, so
-everything Recoolor changed is put back, then `sudo dnf remove recoolor` or
+**Uninstall:** Reset in the window (or `recoolor restore`) first, so everything
+Recoolor changed is put back, then `sudo dnf remove recoolor` or
 `sudo make uninstall`.
 
-## Light and dark
+## Using it
 
-Turn on **Follow System Style** (or run `recoolor apply <light> <dark>`) to use one
-palette in light style and another in dark. GTK4 and libadwaita apps switch by
-themselves through a `prefers-color-scheme` media query; GTK3 and the Shell are
-switched by `recoolor watch` (below).
+Open **Recoolor**, pick a palette card to preview it on Recoolor's own window, turn
+on what else it should theme, and **Apply**. **Reset** undoes all of it.
 
-## Accent color
+- **Light and dark:** turn on **Follow System Style** to use one palette in light
+  style and another in dark. Everything switches with GNOME's Dark Style toggle.
+- **Accent color:** the Accent Color row picks among the palette's own colors:
+  Blue gives the palette's blue, Pink its pink, and so on. It sets GNOME's accent
+  too, so Settings → Appearance shows the same choice, and picking there works as
+  well. **Palette's Own** uses the palette's signature accent.
+- **Restart Now:** apps read their theme when they start. After Apply, Recoolor
+  offers to restart Firefox, Thunderbird and Chrome if they are open: each quits
+  the way its own Quit does, saving its session, and comes back as it was. Files
+  and Calendar keep running in the background, so Apply restarts those by itself.
 
-The accent you pick in Settings → Appearance chooses among the palette's own
-colors: Blue gives the palette's blue, Teal its teal, Pink its pink, and so on
-(Slate gives its muted grey). Until you pick one, the palette's own accent is used,
-such as Catppuccin's mauve. Recoolor never changes the setting itself; to go back to
-the palette's own accent, run `gsettings reset org.gnome.desktop.interface accent-color`.
-The swatches in Settings keep GNOME's shades; apps and the Shell get the palette's.
+The same works from the command line:
 
-## Keeping up with GNOME
+```sh
+recoolor list                                     # bundled and user palettes
+recoolor apply catppuccin-mocha                   # apply, keeping the extras that are on
+recoolor apply catppuccin-latte catppuccin-mocha  # a light/dark pair
+recoolor status                                   # what is applied
+recoolor restore                                  # undo everything
+recoolor show catppuccin-mocha [gtk3|shell]       # print the generated CSS
+```
 
-Every apply starts a small user service, `recoolor-watch.service`, and Reset stops and
-removes it. It rewrites Recoolor's files when you switch light/dark (for a pair) or
-pick another accent, and reloads the Shell theme. Apps opened afterwards get the
-change; apps already open keep what they loaded, since GTK reads `gtk.css` only at
-startup (checked on GTK 4.22: neither a light/dark nor a theme switch re-reads
-it). GTK4 apps still follow a pair's light/dark switch live through the media
-query. The service runs the `recoolor` binary you applied from, so apply again
-after moving it.
+## What it themes
 
-## Layout
+| | How |
+|---|---|
+| **libadwaita apps** (most GNOME apps) | Fully, through the named colors libadwaita draws everything from. Restart them to see a change; light/dark switches live. |
+| **GTK3 apps** | Fully with **adw-gtk3 for GTK3 Apps** on (needs `adw-gtk3-theme`), which switches GTK3 to the libadwaita look. Without it, the common widgets are recolored directly. |
+| **Qt and KDE apps** | **Qt and KDE Apps** writes a KDE color scheme (`~/.config/kdeglobals`) for KDE apps and Qt Flatpaks such as Kdenlive. Other Qt apps use Qt's GTK3 theme on GNOME, so they follow the GTK3 colors. |
+| **Flatpak apps** | Through read-only access to the GTK settings folders. Recoolor adds it to your Flatpak overrides if it is not already there. |
+| **GNOME Shell** | The top bar, quick settings, calendar and overview, recolored from the installed Shell's own stylesheet. Needs the User Themes extension. Works with Blur my Shell's "Preserve shell theme", keeping its see-through look. |
+| **Wallpaper** | A light and a dark wallpaper, optionally tinted to the palette: **Match Palette** keeps the image and moves its colors to the palette's, **Mono** makes a gradient map. |
+| **Lock screen** | An image of its own, sharp or blurred (GNOME otherwise shows the desktop wallpaper, blurred). |
+| **Icons and cursors** | Any installed theme. |
+| **Login screen** | Through GDM Settings: **Set Up…** explains the one-time step. |
 
-- `crates/recoolor-core`: the engine, with no GTK dependency. Palettes, CSS
-  generation, and apply/restore.
-- `crates/recoolor-core/palettes`: bundled palettes, compiled in.
-- `crates/recoolor`: the app: the window (`src/ui`), the command line (`src/cli.rs`),
-  and the systemd and GNOME settings glue (`src/desktop.rs`).
-- `data`: desktop file, AppStream metadata and icons.
+Apps with themes of their own, in the **Apps** group:
+
+| App | How | Live? |
+|---|---|---|
+| Terminal (Ptyxis) | Gogh's palette for it when there is one, else a generated one | Yes |
+| fish | Your fish theme for the palette, else generated colors | New shells |
+| Text Editor | A style scheme for light and dark | Yes |
+| VS Code | A local Recoolor theme extension | Yes, after one Reload Window |
+| Firefox, Thunderbird | `userChrome.css` (needs `toolkit.legacyUserProfileCustomizations.stylesheets`) | Restart Now |
+| Chrome | Its GTK mode (Settings → Appearance → GTK) | Restart Now |
+| Spotifast | A Recoolor custom theme | Yes |
+| Slack | Shows the four colors to paste in its theme settings | Manual |
+
+The optional **Screen Fade** crossfades the screen while Apply runs. It and the lock
+screen image use a small Recoolor Shell extension; log out and back in once after
+first turning either on.
+
+## Your setup is safe
+
+- Recoolor never overwrites or deletes something it did not write. Its files start
+  with a "Generated by Recoolor" line; a `gtk.css` of your own is renamed to
+  `gtk.css.recoolor-backup` and moved back on Reset.
+- Settings it changes (wallpaper, icon and GTK themes, the Text Editor scheme, the
+  Shell theme, Ptyxis's palette, VS Code's theme line) are recorded once in
+  `~/.local/state/recoolor/state.toml`, and Reset puts back exactly those.
+- A small user service, `recoolor-watch.service`, keeps things in step when you
+  switch light/dark or pick another accent. Reset stops and removes it.
 
 ## Palettes
 
-Each palette is a TOML file of semantic roles (see `crates/recoolor-core/palettes`).
+Each palette is a TOML file of colors by role (see `crates/recoolor-core/palettes`).
 Drop your own into `~/.local/share/recoolor/palettes/`; one with the same `id` as a
 bundled palette replaces it.
 
-## Your existing gtk.css is safe
+## When something goes wrong
 
-On the first apply, a `gtk.css` Recoolor did not write is renamed to
-`gtk.css.recoolor-backup` next to it (symlinks stay symlinks). Later applies only
-overwrite Recoolor's own file, which starts with a `/* Generated by Recoolor` line.
-`restore` deletes Recoolor's file and moves the backup back. Recoolor refuses to apply
-rather than overwrite an older backup, and never deletes a `gtk.css` it did not write.
-
-## Coverage
-
-- **libadwaita** apps are fully recolored, since libadwaita draws everything from
-  named colors. Colors are written both as CSS variables (libadwaita 1.6+) and as
-  `@define-color` (older). GTK older than 4.16 prints one harmless parse warning
-  for the variables block.
-- **GTK3** apps get named colors plus direct rules for common widgets. Most apps look
-  right; a few widgets keep Adwaita's colors. Full themes come with the upstream
-  installer later.
-- **Flatpak apps**, **GNOME Shell**, **icons** and **cursors**: see below.
-
-## Beyond GTK apps
-
-The window's **Also Apply To** group turns these on; `recoolor apply` keeps whichever
-are on, and Reset or `recoolor restore` undoes all of them. Recoolor records the values
-it replaced in `~/.local/state/recoolor/state.toml` and puts back the ones you had
-before Recoolor, not an earlier Recoolor choice.
-
-- **Flatpak apps** cannot see `~/.config/gtk-{3,4}.0` unless granted. Recoolor adds
-  read-only grants to `~/.local/share/flatpak/overrides/global` (what
-  `flatpak override --user` writes) and later removes only those. If a grant or
-  a deny is already there, including a system-wide one in
-  `/var/lib/flatpak/overrides/global`, Recoolor leaves it as it is.
-- **GNOME Shell** needs the User Themes extension, turned on. Recoolor takes the
-  installed Shell's own stylesheet and recolors it: greys follow the palette
-  from background to text, colors map to the palette's nearest hue, and the
-  accent becomes the palette's. It is written to
-  `~/.local/share/themes/Recoolor/gnome-shell/gnome-shell.css` and selected in the
-  extension. Built against GNOME Shell 50; because it starts from the installed
-  stylesheet, apply again after a GNOME upgrade. A light/dark pair switches the
-  Shell too, through `recoolor watch`.
-- **Icons** and **cursors** pick any theme installed in `~/.local/share/icons`,
-  `~/.icons` or `/usr/share/icons`. Flatpak apps only use a host icon theme
-  that is also installed for Flatpak; Recoolor does not change that.
-
-## Apps
-
-The window's **Apps** group themes a few apps from the same palette. Each writes a
-file starting with "Generated by Recoolor", and Reset removes it and puts back what
-the app used before.
-
-- **Ptyxis** (GNOME's terminal): a `Recoolor` palette in
-  `~/.local/share/org.gnome.Ptyxis/palettes/`, selected in the default profile.
-  Its 16 colors follow Gogh's layout, so they match Ptyxis's built-in palettes.
-  A light/dark pair switches inside Ptyxis.
-- **fish**: `~/.config/fish/conf.d/recoolor.fish` sets the syntax colors. It loads
-  after fish's own `fish_frozen_theme.fish`, so it wins without touching your
-  theme files. New shells get it.
-- **VS Code**: a local "Recoolor Dark"/"Recoolor Light" theme extension in
-  `~/.vscode/extensions`, selected through `workbench.colorTheme` in your
-  `settings.json`. Only that one value changes (or one line is added); comments
-  and other settings stay as they are.
-- **Firefox**: `chrome/recoolor.css` in each profile sets the color variables of
-  firefox-gnome-theme (`--gnome-*`) and Catppuccin-style userChrome files
-  (`--ctp-*`), loaded by one marked `@import` line in `userChrome.css`. Your own
-  files stay as they are. Needs `toolkit.legacyUserProfileCustomizations.stylesheets`;
-  restart Firefox to see a change.
-- **Spotifast**: a `Recoolor.json` custom theme in its themes folder. Pick "Recoolor"
-  once in Spotifast's appearance settings; it then updates live.
-- **Chrome**: choose the GTK theme in Chrome's appearance settings and it uses
-  Recoolor's GTK colors; restart Chrome after applying.
-- **Slack** keeps its theme in your Slack account, which no other app can set.
-  **Colors** shows the four colors Slack's custom theme asks for (system
-  navigation, selected items, presence, notifications), with Copy.
-- **Login screen** (GDM): needs root, so Recoolor leaves it to GDM Settings, which
-  only lists system themes. **Copy Command** gives the one-time `sudo` command that
-  links Recoolor's theme into `/usr/local/share/themes`; then, with the GNOME Shell
-  switch on, pick "Recoolor" in GDM Settings. It copies the theme, so pick it again
-  after changing palettes.
-
-## License
-
-GPL-3.0-or-later. See `LICENSE`.
+Recoolor keeps a log at `~/.local/state/recoolor/recoolor.log`: every error it shows,
+each Apply and Reset, the service's switches, and GTK warnings. The service also
+logs to the journal (`journalctl --user -u recoolor-watch`).
 
 ## Development
 
@@ -183,10 +123,16 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-Recoolor keeps a log at `~/.local/state/recoolor/recoolor.log` (`$XDG_STATE_HOME`): every
-error it shows, each Apply and Reset, `recoolor watch` switches, and GTK/GLib
-warnings. Check it first when something goes wrong; `recoolor watch` also logs to
-the journal (`journalctl --user -u recoolor-watch`).
+- `crates/recoolor-core`: everything that writes files (palettes, CSS, wallpapers,
+  app configs, the state record), with no GTK dependency, tested on temporary
+  folders.
+- `crates/recoolor`: the window (`src/ui`), the command line, the service, and the
+  GNOME settings, D-Bus and image glue.
+- `data`: desktop file, AppStream metadata and icons. `packaging`: the RPM.
 
 One test loads the generated CSS into GTK's own parser and needs a display; it
 skips without one. CI runs it under `xvfb-run`.
+
+## License
+
+GPL-3.0-or-later. See `LICENSE`.

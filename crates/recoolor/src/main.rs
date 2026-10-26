@@ -5,6 +5,7 @@ use std::process::ExitCode;
 mod cli;
 mod desktop;
 mod log;
+mod restart;
 mod targets;
 mod ui;
 mod wallpaper;

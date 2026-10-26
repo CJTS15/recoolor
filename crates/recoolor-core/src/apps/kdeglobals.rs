@@ -7,10 +7,10 @@
 //! takes its colors from GTK3, so they follow Recoolor's GTK3 colors already.
 
 use std::fmt::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::{remove_owned, write_owned};
-use crate::apply::ApplyError;
+use crate::apply::{ApplyError, io_err, write_atomic};
 use crate::color::Color;
 use crate::css::Roles;
 use crate::palette::Palette;
@@ -77,16 +77,30 @@ pub fn render(palette: &Palette) -> String {
     text
 }
 
-pub fn write(config_home: &Path, palette: &Palette) -> Result<(), ApplyError> {
-    write_owned(&path(config_home), &render(palette))
-}
-
-pub fn remove(config_home: &Path) -> Result<bool, ApplyError> {
-    remove_owned(&path(config_home))
-}
-
+/// Recoolor's by its marker comment, or by its scheme name: KDE's settings library
+/// rewrites the whole file when a KDE app saves a setting, dropping comments.
 pub fn is_applied(config_home: &Path) -> bool {
-    super::is_ours(&path(config_home))
+    let path = path(config_home);
+    super::is_ours(&path)
+        || fs::read_to_string(&path).is_ok_and(|t| t.lines().any(|l| l == "ColorScheme=Recoolor"))
+}
+
+pub fn write(config_home: &Path, palette: &Palette) -> Result<(), ApplyError> {
+    let path = path(config_home);
+    if path.exists() && !is_applied(config_home) {
+        return Err(ApplyError::Foreign { path });
+    }
+    write_atomic(&path, &render(palette))
+}
+
+/// Removes the file if it is Recoolor's. Returns whether it was.
+pub fn remove(config_home: &Path) -> Result<bool, ApplyError> {
+    if !is_applied(config_home) {
+        return Ok(false);
+    }
+    let path = path(config_home);
+    fs::remove_file(&path).map_err(io_err(&path))?;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -110,6 +124,15 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         write(home.path(), &mocha).unwrap();
         assert!(is_applied(home.path()));
+        assert!(remove(home.path()).unwrap());
+        // Still Recoolor's after KDE rewrote it without the comment.
+        fs::write(
+            path(home.path()),
+            "[General]\nColorScheme=Recoolor\n[KDE]\nSingleClick=false\n",
+        )
+        .unwrap();
+        assert!(is_applied(home.path()));
+        write(home.path(), &mocha).unwrap();
         assert!(remove(home.path()).unwrap());
         // The user's own kdeglobals is never replaced or removed.
         fs::write(path(home.path()), "[General]\nColorScheme=Breeze\n").unwrap();

@@ -891,3 +891,102 @@ fn sync(dirs: &Dirs, settings: &gio::Settings) -> Result<(), String> {
     ));
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Runs `reset_restores_inner` in a child process on GLib's in-memory settings
+    /// backend, so the test never touches the real desktop's settings.
+    #[test]
+    fn reset_restores_the_users_settings() {
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "targets::tests::reset_restores_inner",
+            ])
+            .env("GSETTINGS_BACKEND", "memory")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success() && stdout.contains("1 passed"),
+            "{stdout}"
+        );
+    }
+
+    #[test]
+    #[ignore = "run by reset_restores_the_users_settings with the memory backend"]
+    fn reset_restores_inner() {
+        assert_eq!(
+            std::env::var("GSETTINGS_BACKEND").as_deref(),
+            Ok("memory"),
+            "refusing to change the real settings"
+        );
+        let (Some(interface), Some(background)) = (
+            desktop::interface_settings(),
+            desktop::background_settings(),
+        ) else {
+            eprintln!("skipped: GNOME's settings schemas are not installed");
+            return;
+        };
+        let read = |s: &gio::Settings, key: &str| s.string(key).to_string();
+        let before = [
+            read(&background, "picture-uri"),
+            read(&background, "picture-uri-dark"),
+            read(&interface, "icon-theme"),
+            read(&interface, "color-scheme"),
+        ];
+
+        let root = std::env::temp_dir().join(format!("recoolor-test-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let image = root.join("tree.png");
+        std::fs::write(&image, b"not decoded with Original").unwrap();
+        let dirs = Dirs {
+            config: root.join("config"),
+            data: root.join("data"),
+            state: root.join("state"),
+        };
+        let mocha = palette::bundled()
+            .into_iter()
+            .find(|p| p.id == "catppuccin-mocha")
+            .unwrap();
+        let look = Look {
+            now: &mocha,
+            pair: None,
+        };
+        let extras = Extras {
+            wallpaper: Some(image.display().to_string()),
+            wallpaper_tint: Tint::None,
+            ..Extras::default()
+        };
+        let mut state = State::default();
+
+        set_wallpaper(&dirs, &mut state, &extras, Some(look)).unwrap();
+        set_interface(&mut state.icons_previous, "icon-theme", Some("Papirus")).unwrap();
+        set_light_shell(&mut state, true).unwrap();
+        assert_eq!(
+            read(&background, "picture-uri"),
+            gio::File::for_path(&image).uri()
+        );
+        assert_eq!(read(&interface, "icon-theme"), "Papirus");
+        // GNOME's default `default` becomes `prefer-light` while the Shell is themed.
+        if before[3] == "default" {
+            assert_eq!(read(&interface, "color-scheme"), "prefer-light");
+        }
+
+        set_wallpaper(&dirs, &mut state, &Extras::default(), None).unwrap();
+        set_interface(&mut state.icons_previous, "icon-theme", None).unwrap();
+        set_light_shell(&mut state, false).unwrap();
+        let after = [
+            read(&background, "picture-uri"),
+            read(&background, "picture-uri-dark"),
+            read(&interface, "icon-theme"),
+            read(&interface, "color-scheme"),
+        ];
+        assert_eq!(after, before);
+        assert_eq!(state, State::default(), "nothing left to restore");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
