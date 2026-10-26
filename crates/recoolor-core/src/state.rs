@@ -53,6 +53,9 @@ pub struct State {
     /// The image the user picked for the lock screen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lock_source: Option<String>,
+    /// GNOME's `gtk-theme`, before Recoolor switched GTK3 to adw-gtk3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gtk_theme_previous: Option<String>,
 }
 
 /// The `org.gnome.desktop.background` keys Recoolor changes.
@@ -141,6 +144,7 @@ mod tests {
             wallpaper_tint: Some(crate::wallpaper::Tint::Mono),
             wallpaper_strength: Some(70),
             lock_source: Some("/home/me/Pictures/lock.jxl".into()),
+            gtk_theme_previous: Some("Adwaita".into()),
         };
         state.save(&path).unwrap();
         assert_eq!(State::load(&path).unwrap(), state);

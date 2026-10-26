@@ -8,6 +8,19 @@
 use super::{Roles, header};
 use crate::palette::Palette;
 
+/// GTK3 under the adw-gtk3 theme, which draws from libadwaita's named colors like
+/// GTK4 does: just those colors, without the widget rules `gtk3` needs to recolor
+/// stock Adwaita (they would fight adw-gtk3's own look).
+pub fn gtk3_adw(palette: &Palette) -> String {
+    let c = &palette.colors;
+    header(&palette.id)
+        + &super::gtk4::define_colors(palette)
+        + &format!(
+            "@define-color panel_bg_color {};\n@define-color panel_fg_color {};\n",
+            c.crust, c.text
+        )
+}
+
 pub fn gtk3(palette: &Palette) -> String {
     let c = &palette.colors;
     let r = Roles::new(palette);

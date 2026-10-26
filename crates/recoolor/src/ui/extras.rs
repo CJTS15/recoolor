@@ -33,6 +33,7 @@ pub struct ExtrasRows {
     fade: adw::SwitchRow,
     flatpak: adw::SwitchRow,
     shell: adw::SwitchRow,
+    adw_gtk3: adw::SwitchRow,
     icons: adw::ComboRow,
     cursors: adw::ComboRow,
     wallpaper: Rc<RefCell<Option<String>>>,
@@ -113,6 +114,19 @@ impl ExtrasRows {
         group.add(&fade);
         group.add(&flatpak);
         group.add(&shell);
+        let adw_gtk3 = adw::SwitchRow::builder()
+            .title("adw-gtk3 for GTK3 Apps")
+            .subtitle("Full coverage for GTK3 apps through the libadwaita-style adw-gtk3 theme")
+            .build();
+        if !dirs.is_some_and(|d| desktop::adw_gtk3_installed(&d.data)) {
+            adw_gtk3.set_sensitive(false);
+            adw_gtk3.set_subtitle("Install adw-gtk3 first: sudo dnf install adw-gtk3-theme");
+        } else if desktop::flatpak_installed() && !desktop::adw_gtk3_flatpak() {
+            adw_gtk3.set_subtitle(
+                "For GTK3 Flatpak apps too, install it from Flathub: flatpak install org.gtk.Gtk3theme.adw-gtk3 org.gtk.Gtk3theme.adw-gtk3-dark",
+            );
+        }
+        group.add(&adw_gtk3);
         let wallpaper = Rc::new(RefCell::new(None));
         let wallpaper_row = WallpaperRow::new(
             "Wallpaper",
@@ -262,6 +276,7 @@ impl ExtrasRows {
             fade,
             flatpak,
             shell,
+            adw_gtk3,
             icons,
             cursors,
             wallpaper,
@@ -282,6 +297,7 @@ impl ExtrasRows {
         self.flatpak.set_active(extras.flatpak);
         for (row, on) in [
             (&self.shell, extras.shell),
+            (&self.adw_gtk3, extras.adw_gtk3),
             (&self.ptyxis, extras.ptyxis),
             (&self.fish, extras.fish),
             (&self.vscode, extras.vscode),
@@ -338,6 +354,7 @@ impl ExtrasRows {
         Extras {
             flatpak: self.flatpak.is_active(),
             shell: self.shell.is_active(),
+            adw_gtk3: self.adw_gtk3.is_active(),
             icons: chosen(&self.icons, &self.icon_names),
             wallpaper: self.wallpaper.borrow().clone(),
             wallpaper_dark: self.wallpaper_dark.borrow().clone(),

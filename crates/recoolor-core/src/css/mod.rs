@@ -4,7 +4,7 @@ mod gtk3;
 mod gtk4;
 mod shell;
 
-pub use gtk3::gtk3;
+pub use gtk3::{gtk3, gtk3_adw};
 pub use gtk4::{gtk4, gtk4_pair};
 pub use shell::{shell, shell_blur};
 
