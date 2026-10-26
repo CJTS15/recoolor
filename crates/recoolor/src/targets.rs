@@ -17,7 +17,7 @@ use recoolor_core::wallpaper::{self, Tint};
 /// How strongly wallpapers are tinted until the user picks otherwise.
 pub const DEFAULT_STRENGTH: u8 = 85;
 use recoolor_core::{
-    ApplyError, CssState, GtkConfig, RestoreOutcome, Toolkit, flatpak, paths, shell,
+    ApplyError, CssState, GtkConfig, RestoreOutcome, Toolkit, Variant, flatpak, paths, shell,
 };
 
 use crate::desktop::{self, Dirs};
@@ -79,6 +79,8 @@ pub struct Extras {
     /// whether to blur it.
     pub lock_image: Option<String>,
     pub lock_blur: bool,
+    /// GTK3 apps use the adw-gtk3 theme, recolored through its named colors.
+    pub adw_gtk3: bool,
     pub cursors: Option<String>,
     pub ptyxis: bool,
     pub fish: bool,
@@ -114,6 +116,7 @@ pub fn current(dirs: &Dirs) -> Extras {
         wallpaper_strength: state.wallpaper_strength.unwrap_or(DEFAULT_STRENGTH),
         lock_image: state.lock_source.clone(),
         lock_blur: shell.lock_blur,
+        adw_gtk3: state.gtk_theme_previous.is_some(),
         cursors: interface(&state.cursors_previous, "cursor-theme"),
         // A built-in palette leaves no file, so the record alone says it is on.
         ptyxis: state.ptyxis_previous.is_some(),
@@ -156,7 +159,8 @@ pub fn apply(
     if extras.fade {
         desktop::screen_fade("Freeze");
     }
-    let applied = write_gtk(&GtkConfig::new(&dirs.config), look, dark_now).map(|()| {
+    let cfg = GtkConfig::new(&dirs.config).with_adw_gtk3(extras.adw_gtk3);
+    let applied = write_gtk(&cfg, look, dark_now).map(|()| {
         log::info(&format!(
             "applied {} (accent {}) with {extras:?}",
             choice.name(),
@@ -252,6 +256,10 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
             set_light_shell(&mut state, extras.shell && look.is_some()),
         ),
         ("Wallpaper", set_wallpaper(dirs, &mut state, extras, look)),
+        (
+            "adw-gtk3",
+            set_adw_gtk3(dirs, &mut state, when(extras.adw_gtk3).map(|l| l.now)),
+        ),
         (
             "Icons",
             set_interface(
@@ -471,6 +479,24 @@ fn set_wallpaper(
         }
     }
     Ok(())
+}
+
+/// Switches GTK3 to adw-gtk3, in the variant matching the palette in effect, or
+/// puts the user's GTK3 theme back.
+fn set_adw_gtk3(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Result<(), String> {
+    let theme = palette.map(|p| match p.variant {
+        Variant::Dark => "adw-gtk3-dark",
+        Variant::Light => "adw-gtk3",
+    });
+    if theme.is_some() && !desktop::adw_gtk3_installed(&dirs.data) {
+        return Err("install adw-gtk3 first (sudo dnf install adw-gtk3-theme)".into());
+    }
+    // Only on a change: GTK3 apps reload their theme on every write.
+    let current = desktop::interface_settings().map(|s| s.string("gtk-theme").to_string());
+    if theme.is_some() && current.as_deref() == theme {
+        return Ok(());
+    }
+    set_interface(&mut state.gtk_theme_previous, "gtk-theme", theme)
 }
 
 fn set_interface(
@@ -735,7 +761,8 @@ pub fn watch(dirs: Dirs) -> Result<(), String> {
 fn sync(dirs: &Dirs, settings: &gio::Settings) -> Result<(), String> {
     let dark_now = desktop::prefers_dark(settings);
     let accent = desktop::accent_choice(settings);
-    let cfg = GtkConfig::new(&dirs.config);
+    let extras = current(dirs);
+    let cfg = GtkConfig::new(&dirs.config).with_adw_gtk3(extras.adw_gtk3);
     let statuses = cfg.status().map_err(|e| e.to_string())?;
     let gtk4 = statuses
         .into_iter()
@@ -758,7 +785,7 @@ fn sync(dirs: &Dirs, settings: &gio::Settings) -> Result<(), String> {
     let look = look(&tinted, dark_now);
     write_gtk(&cfg, look, dark_now).map_err(|e| e.to_string())?;
 
-    let problems = set_extras(dirs, &current(dirs), Some(look));
+    let problems = set_extras(dirs, &extras, Some(look));
     for p in &problems {
         log::error(&format!("recoolor watch: {p}"));
     }

@@ -94,12 +94,28 @@ pub enum RestoreOutcome {
 #[derive(Clone, Debug)]
 pub struct GtkConfig {
     config_home: PathBuf,
+    adw_gtk3: bool,
 }
 
 impl GtkConfig {
     pub fn new(config_home: impl Into<PathBuf>) -> Self {
         Self {
             config_home: config_home.into(),
+            adw_gtk3: false,
+        }
+    }
+
+    /// Writes GTK3's file for the adw-gtk3 theme (named colors only).
+    pub fn with_adw_gtk3(mut self, on: bool) -> Self {
+        self.adw_gtk3 = on;
+        self
+    }
+
+    fn gtk3(&self, palette: &Palette) -> String {
+        if self.adw_gtk3 {
+            css::gtk3_adw(palette)
+        } else {
+            css::gtk3(palette)
         }
     }
 
@@ -126,7 +142,10 @@ impl GtkConfig {
 
     /// Writes `palette` for both toolkits.
     pub fn apply(&self, palette: &Palette) -> Result<(), ApplyError> {
-        self.write(Toolkit::ALL.map(|toolkit| (toolkit, toolkit.render(palette))))
+        self.write([
+            (Toolkit::Gtk3, self.gtk3(palette)),
+            (Toolkit::Gtk4, css::gtk4(palette)),
+        ])
     }
 
     /// Writes a pair that follows GNOME's light/dark style. GTK4 switches by itself;
@@ -138,7 +157,7 @@ impl GtkConfig {
         dark: &Palette,
         dark_now: bool,
     ) -> Result<(), ApplyError> {
-        let gtk3 = css::gtk3(if dark_now { dark } else { light });
+        let gtk3 = self.gtk3(if dark_now { dark } else { light });
         self.write([
             (Toolkit::Gtk3, gtk3),
             (Toolkit::Gtk4, css::gtk4_pair(light, dark)),

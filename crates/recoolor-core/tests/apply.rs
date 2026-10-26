@@ -149,3 +149,18 @@ fn pair_marks_gtk4_with_both_ids_and_gtk3_with_the_current_one() {
     let outcomes = cfg.restore().unwrap();
     assert!(outcomes.iter().all(|(_, o)| *o == RestoreOutcome::Removed));
 }
+
+#[test]
+fn adw_gtk3_writes_named_colors_only() {
+    let home = tempfile::tempdir().unwrap();
+    let cfg = GtkConfig::new(home.path()).with_adw_gtk3(true);
+    cfg.apply(&palette("catppuccin-mocha")).unwrap();
+    let gtk3 = fs::read_to_string(cfg.css_path(Toolkit::Gtk3)).unwrap();
+    assert!(gtk3.contains("@define-color window_bg_color #1e1e2e;"));
+    assert!(gtk3.contains("@define-color accent_bg_color #cba6f7;"));
+    assert!(!gtk3.contains("button"));
+    assert_eq!(
+        states(&cfg)[0],
+        CssState::Recoolor("catppuccin-mocha".into())
+    );
+}

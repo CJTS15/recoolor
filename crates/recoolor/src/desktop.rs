@@ -371,6 +371,26 @@ pub fn shell_css(palette: &Palette, data_home: &Path) -> Result<String, String> 
     Ok(css)
 }
 
+/// Whether the adw-gtk3 theme is installed where GTK3 looks for themes.
+pub fn adw_gtk3_installed(data_home: &Path) -> bool {
+    std::iter::once(data_home.join("themes"))
+        .chain(std::env::home_dir().map(|h| h.join(".themes")))
+        .chain(
+            glib::system_data_dirs()
+                .into_iter()
+                .map(|d| d.join("themes")),
+        )
+        .any(|dir| dir.join("adw-gtk3/gtk-3.0/gtk.css").is_file())
+}
+
+/// Whether GTK3 Flatpak apps can use adw-gtk3: it is a Flatpak runtime of its own.
+pub fn adw_gtk3_flatpak() -> bool {
+    Command::new("flatpak")
+        .args(["info", "org.gtk.Gtk3theme.adw-gtk3"])
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
 pub fn flatpak_installed() -> bool {
     Command::new("flatpak")
         .arg("--version")

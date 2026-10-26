@@ -40,13 +40,18 @@ window.background { background-color: var(--window-bg-color); color: var(--windo
 headerbar.titlebar { background: var(--headerbar-bg-color); color: var(--headerbar-fg-color); }
 ";
 
-fn colors(palette: &Palette) -> String {
-    let colors = named_colors(palette);
+/// libadwaita's named colors as `@define-color`, which adw-gtk3 reads in GTK3 too.
+pub(crate) fn define_colors(palette: &Palette) -> String {
     let mut css = String::new();
-
-    for (name, value) in &colors {
+    for (name, value) in named_colors(palette) {
         let _ = writeln!(css, "@define-color {name} {value};");
     }
+    css
+}
+
+fn colors(palette: &Palette) -> String {
+    let colors = named_colors(palette);
+    let mut css = define_colors(palette);
 
     css.push_str("\n:root {\n");
     for (name, value) in &colors {

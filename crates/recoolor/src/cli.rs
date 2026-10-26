@@ -101,6 +101,14 @@ pub fn run(args: &[&str]) -> Result<(), String> {
             println!("flatpak: {}", on(extras.flatpak));
             println!("shell: {shell}");
             println!("icons: {}", or_unset(extras.icons));
+            println!(
+                "gtk3 theme: {}",
+                if extras.adw_gtk3 {
+                    "adw-gtk3"
+                } else {
+                    "not set by Recoolor"
+                }
+            );
             println!("wallpaper: {}", or_unset(extras.wallpaper));
             println!("dark wallpaper: {}", or_unset(extras.wallpaper_dark));
             println!(
