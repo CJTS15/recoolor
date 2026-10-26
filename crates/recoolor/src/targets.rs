@@ -10,7 +10,7 @@ use gtk::gio;
 use gtk::gio::prelude::*;
 use gtk::glib;
 use recoolor_core::apps::{
-    self, firefox, fish, gtksourceview, ptyxis, shell_fade, spotifast, vscode,
+    self, firefox, fish, gtksourceview, kdeglobals, ptyxis, shell_fade, spotifast, vscode,
 };
 use recoolor_core::palette::{self, Palette};
 use recoolor_core::state::{self, State};
@@ -85,6 +85,8 @@ pub struct Extras {
     pub adw_gtk3: bool,
     pub text_editor: bool,
     pub thunderbird: bool,
+    /// KDE's color scheme (`kdeglobals`), for KDE apps and Qt Flatpaks.
+    pub kde: bool,
     pub cursors: Option<String>,
     pub ptyxis: bool,
     pub fish: bool,
@@ -122,6 +124,7 @@ pub fn current(dirs: &Dirs) -> Extras {
         lock_blur: shell.lock_blur,
         adw_gtk3: state.gtk_theme_previous.is_some(),
         text_editor: state.text_editor_previous.is_some(),
+        kde: kdeglobals::is_applied(&dirs.config),
         thunderbird: desktop::home().is_ok_and(|h| {
             firefox::thunderbird_profiles(&h)
                 .iter()
@@ -314,6 +317,10 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
         (
             "Text Editor",
             set_text_editor(dirs, &mut state, when(extras.text_editor)),
+        ),
+        (
+            "Qt and KDE apps",
+            set_kde(dirs, when(extras.kde).map(|l| l.now)),
         ),
         (
             "Lock screen and Screen Fade",
@@ -741,6 +748,20 @@ fn set_text_editor(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result
         desktop::set_string(&settings, "style-scheme", &previous)?;
     }
     desktop::set_string(&settings, "style-scheme", gtksourceview::SCHEME)
+}
+
+fn set_kde(dirs: &Dirs, palette: Option<&Palette>) -> Result<(), String> {
+    match palette {
+        Some(p) => kdeglobals::write(&dirs.config, p).map_err(|e| match e {
+            ApplyError::Foreign { .. } => {
+                "you have your own ~/.config/kdeglobals, so Recoolor leaves it alone".to_owned()
+            }
+            e => e.to_string(),
+        }),
+        None => kdeglobals::remove(&dirs.config)
+            .map(drop)
+            .map_err(|e| e.to_string()),
+    }
 }
 
 fn set_spotifast(dirs: &Dirs, palette: Option<&Palette>) -> Result<(), String> {
