@@ -3,12 +3,20 @@
 
 use std::cell::RefCell;
 use std::path::Path;
+use std::rc::Rc;
 
 use adw::prelude::*;
 use recoolor_core::{flatpak, themes};
 
 use crate::desktop::{self, Dirs};
-use crate::targets::Extras;
+use crate::targets::{DEFAULT_STRENGTH, Extras};
+use recoolor_core::wallpaper::Tint;
+
+const TINTS: [(Tint, &str); 3] = [
+    (Tint::Match, "Match Palette"),
+    (Tint::Mono, "Mono"),
+    (Tint::None, "Original"),
+];
 
 const UNSET: &str = "Not Set by Recoolor";
 
@@ -27,6 +35,15 @@ pub struct ExtrasRows {
     shell: adw::SwitchRow,
     icons: adw::ComboRow,
     cursors: adw::ComboRow,
+    wallpaper: Rc<RefCell<Option<String>>>,
+    wallpaper_row: WallpaperRow,
+    wallpaper_dark: Rc<RefCell<Option<String>>>,
+    wallpaper_dark_row: WallpaperRow,
+    tint: adw::ComboRow,
+    strength: gtk::Scale,
+    lock: Rc<RefCell<Option<String>>>,
+    lock_row: WallpaperRow,
+    lock_blur: adw::SwitchRow,
     // Grow when a theme Recoolor set lies outside the scanned folders.
     icon_names: RefCell<Vec<String>>,
     cursor_names: RefCell<Vec<String>>,
@@ -96,6 +113,59 @@ impl ExtrasRows {
         group.add(&fade);
         group.add(&flatpak);
         group.add(&shell);
+        let wallpaper = Rc::new(RefCell::new(None));
+        let wallpaper_row = WallpaperRow::new(
+            "Wallpaper",
+            "Not Set by Recoolor",
+            "picture-uri",
+            wallpaper.clone(),
+        );
+        let wallpaper_dark = Rc::new(RefCell::new(None));
+        let wallpaper_dark_row = WallpaperRow::new(
+            "Dark Style Wallpaper",
+            "Same as Light Style",
+            "picture-uri-dark",
+            wallpaper_dark.clone(),
+        );
+        let tint = adw::ComboRow::builder()
+            .title("Wallpaper Tint")
+            .model(&gtk::StringList::new(&TINTS.map(|(_, label)| label)))
+            .build();
+        let strength = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 100.0, 5.0);
+        strength.set_width_request(160);
+        strength.set_valign(gtk::Align::Center);
+        strength.set_value(f64::from(DEFAULT_STRENGTH));
+        strength.update_property(&[gtk::accessible::Property::Label("Tint Strength")]);
+        let strength_row = adw::ActionRow::builder().title("Tint Strength").build();
+        strength_row.add_suffix(&strength);
+        // Strength means nothing for the original image.
+        tint.bind_property("selected", &strength_row, "sensitive")
+            .transform_to(|_, i: u32| Some(TINTS[i as usize].0 != Tint::None))
+            .sync_create()
+            .build();
+        group.add(&wallpaper_row.row);
+        group.add(&wallpaper_dark_row.row);
+        group.add(&tint);
+        group.add(&strength_row);
+        let lock = Rc::new(RefCell::new(None));
+        let lock_row = WallpaperRow::new(
+            "Lock Screen",
+            "Same as Desktop, Blurred",
+            "picture-uri",
+            lock.clone(),
+        );
+        let lock_blur = adw::SwitchRow::builder()
+            .title("Blur Lock Screen")
+            .subtitle("A lock screen image of its own goes through Recoolor's Shell extension: log out and back in once after first setting one")
+            .build();
+        // Blur only applies to an image of its own; GNOME always blurs the desktop's.
+        lock_row
+            .clear
+            .bind_property("visible", &lock_blur, "sensitive")
+            .sync_create()
+            .build();
+        group.add(&lock_row.row);
+        group.add(&lock_blur);
         group.add(&icons);
         group.add(&cursors);
 
@@ -194,6 +264,15 @@ impl ExtrasRows {
             shell,
             icons,
             cursors,
+            wallpaper,
+            wallpaper_row,
+            wallpaper_dark,
+            wallpaper_dark_row,
+            tint,
+            strength,
+            lock,
+            lock_row,
+            lock_blur,
             icon_names: RefCell::new(icon_names),
             cursor_names: RefCell::new(cursor_names),
         }
@@ -232,6 +311,18 @@ impl ExtrasRows {
             };
             row.set_selected(pos as u32);
         };
+        *self.wallpaper.borrow_mut() = extras.wallpaper.clone();
+        self.wallpaper_row.show(extras.wallpaper.as_deref());
+        *self.wallpaper_dark.borrow_mut() = extras.wallpaper_dark.clone();
+        self.wallpaper_dark_row
+            .show(extras.wallpaper_dark.as_deref());
+        let pos = TINTS.iter().position(|(t, _)| *t == extras.wallpaper_tint);
+        self.tint.set_selected(pos.unwrap_or(0) as u32);
+        self.strength
+            .set_value(f64::from(extras.wallpaper_strength));
+        *self.lock.borrow_mut() = extras.lock_image.clone();
+        self.lock_row.show(extras.lock_image.as_deref());
+        self.lock_blur.set_active(extras.lock_blur);
         select(&self.icons, &self.icon_names, &extras.icons);
         select(&self.cursors, &self.cursor_names, &extras.cursors);
     }
@@ -248,6 +339,14 @@ impl ExtrasRows {
             flatpak: self.flatpak.is_active(),
             shell: self.shell.is_active(),
             icons: chosen(&self.icons, &self.icon_names),
+            wallpaper: self.wallpaper.borrow().clone(),
+            wallpaper_dark: self.wallpaper_dark.borrow().clone(),
+            wallpaper_tint: TINTS
+                .get(self.tint.selected() as usize)
+                .map_or(Tint::default(), |(t, _)| *t),
+            wallpaper_strength: self.strength.value().round().clamp(0.0, 100.0) as u8,
+            lock_image: self.lock.borrow().clone(),
+            lock_blur: self.lock_blur.is_active(),
             cursors: chosen(&self.cursors, &self.cursor_names),
             ptyxis: self.ptyxis.is_active(),
             fish: self.fish.is_active(),
@@ -305,4 +404,114 @@ fn show_gdm_setup(button: &gtk::Button, theme: Option<&std::path::Path>) {
         _ => {}
     });
     dialog.present(Some(button));
+}
+
+/// A wallpaper row: a thumbnail, Choose and Use Current, and a button to clear
+/// it. The choice takes effect on Apply, like the other rows.
+#[derive(Clone)]
+struct WallpaperRow {
+    row: adw::ActionRow,
+    picture: gtk::Picture,
+    clear: gtk::Button,
+    unset: &'static str,
+}
+
+impl WallpaperRow {
+    /// `key` is the background setting Use Current reads.
+    fn new(
+        title: &str,
+        unset: &'static str,
+        key: &'static str,
+        chosen: Rc<RefCell<Option<String>>>,
+    ) -> Self {
+        let picture = gtk::Picture::builder()
+            .content_fit(gtk::ContentFit::Cover)
+            .width_request(64)
+            .height_request(40)
+            .valign(gtk::Align::Center)
+            .css_classes(["card"])
+            .overflow(gtk::Overflow::Hidden)
+            .build();
+        let clear = gtk::Button::builder()
+            .icon_name("edit-clear-symbolic")
+            .tooltip_text("Clear")
+            .valign(gtk::Align::Center)
+            .css_classes(["flat"])
+            .build();
+        let current = gtk::Button::builder()
+            .icon_name("view-refresh-symbolic")
+            .tooltip_text("Use the Current Wallpaper")
+            .valign(gtk::Align::Center)
+            .css_classes(["flat"])
+            .build();
+        let choose = gtk::Button::builder()
+            .label("Choose…")
+            .valign(gtk::Align::Center)
+            .build();
+        let row = adw::ActionRow::builder().title(title).build();
+        row.add_suffix(&picture);
+        row.add_suffix(&clear);
+        row.add_suffix(&current);
+        row.add_suffix(&choose);
+        let this = Self {
+            row,
+            picture,
+            clear,
+            unset,
+        };
+
+        let pick = {
+            let (this, chosen) = (this.clone(), chosen.clone());
+            move |path: Option<String>| {
+                this.show(path.as_deref());
+                *chosen.borrow_mut() = path;
+            }
+        };
+        let p = pick.clone();
+        this.clear.connect_clicked(move |_| p(None));
+        let p = pick.clone();
+        current.connect_clicked(move |_| {
+            let path = desktop::background_settings()
+                .and_then(|s| gtk::gio::File::for_uri(&s.string(key)).path())
+                .map(|p| p.display().to_string());
+            if path.is_some() {
+                p(path);
+            }
+        });
+        choose.connect_clicked(move |button| {
+            let filter = gtk::FileFilter::new();
+            filter.set_name(Some("Images"));
+            filter.add_mime_type("image/*");
+            let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
+            filters.append(&filter);
+            let dialog = gtk::FileDialog::builder()
+                .title("Choose a Wallpaper")
+                .filters(&filters)
+                .default_filter(&filter)
+                .build();
+            let window = button.root().and_downcast::<gtk::Window>();
+            let p = pick.clone();
+            dialog.open(
+                window.as_ref(),
+                gtk::gio::Cancellable::NONE,
+                move |result| {
+                    if let Some(path) = result.ok().and_then(|f| f.path()) {
+                        p(Some(path.display().to_string()));
+                    }
+                },
+            );
+        });
+        this.show(None);
+        this
+    }
+
+    fn show(&self, path: Option<&str>) {
+        let name = path
+            .and_then(|p| Path::new(p).file_name())
+            .map(|n| n.to_string_lossy());
+        self.row.set_subtitle(name.as_deref().unwrap_or(self.unset));
+        self.picture.set_filename(path);
+        self.picture.set_visible(path.is_some());
+        self.clear.set_visible(path.is_some());
+    }
 }

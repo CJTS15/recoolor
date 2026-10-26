@@ -62,6 +62,11 @@ fn settings(schema_id: &str, extra_dirs: &[PathBuf], path: Option<&str>) -> Opti
     ))
 }
 
+/// GNOME's desktop background settings, or `None` off GNOME.
+pub fn background_settings() -> Option<gio::Settings> {
+    settings("org.gnome.desktop.background", &[], None)
+}
+
 /// GNOME's interface settings, or `None` off GNOME.
 pub fn interface_settings() -> Option<gio::Settings> {
     settings(INTERFACE_SCHEMA, &[], None)

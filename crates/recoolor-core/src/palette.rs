@@ -266,6 +266,21 @@ impl Palette {
         palette
     }
 
+    /// The palette color standing in for a hue (degrees), shared by the Shell
+    /// recolor and wallpapers so the two agree.
+    pub fn hue_color(&self, hue: f32) -> Color {
+        let c = &self.colors;
+        match hue {
+            h if !(15.0..345.0).contains(&h) => c.red,
+            // Adwaita's warning yellows sit at 42°.
+            h if h < 40.0 => c.orange,
+            h if h < 70.0 => c.yellow,
+            h if h < 170.0 => c.green,
+            h if h < 260.0 => c.blue,
+            _ => c.purple,
+        }
+    }
+
     pub fn from_file(path: &Path) -> Result<Self, PaletteError> {
         let source = fs::read_to_string(path).map_err(|source| PaletteError::Read {
             path: path.to_owned(),

@@ -3,7 +3,7 @@
 //! configs (Ptyxis, fish, VS Code) are extras the user turns on. Shared by the
 //! window and the command line.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gtk::gio;
@@ -12,6 +12,10 @@ use gtk::glib;
 use recoolor_core::apps::{self, firefox, fish, ptyxis, shell_fade, spotifast, vscode};
 use recoolor_core::palette::{self, Palette};
 use recoolor_core::state::{self, State};
+use recoolor_core::wallpaper::{self, Tint};
+
+/// How strongly wallpapers are tinted until the user picks otherwise.
+pub const DEFAULT_STRENGTH: u8 = 85;
 use recoolor_core::{
     ApplyError, CssState, GtkConfig, RestoreOutcome, Toolkit, flatpak, paths, shell,
 };
@@ -66,6 +70,15 @@ pub struct Extras {
     pub flatpak: bool,
     pub shell: bool,
     pub icons: Option<String>,
+    /// The desktop wallpaper in light style, and in dark style (`None`: the same).
+    pub wallpaper: Option<String>,
+    pub wallpaper_dark: Option<String>,
+    pub wallpaper_tint: Tint,
+    pub wallpaper_strength: u8,
+    /// A lock screen image of its own (`None`: the desktop's, as GNOME does), and
+    /// whether to blur it.
+    pub lock_image: Option<String>,
+    pub lock_blur: bool,
     pub cursors: Option<String>,
     pub ptyxis: bool,
     pub fish: bool,
@@ -78,6 +91,7 @@ pub struct Extras {
 /// The extras as they are now, read from disk, the state file and GNOME settings.
 pub fn current(dirs: &Dirs) -> Extras {
     let state = State::load(&state::path(&dirs.state)).unwrap_or_default();
+    let shell = shell_fade::read_config(&dirs.data);
     let interface = |previous: &Option<String>, key: &str| {
         previous.as_ref()?;
         Some(desktop::interface_settings()?.string(key).to_string())
@@ -94,6 +108,12 @@ pub fn current(dirs: &Dirs) -> Extras {
             Ok(CssState::Recoolor(_) | CssState::RecoolorPair { .. })
         ),
         icons: interface(&state.icons_previous, "icon-theme"),
+        wallpaper: state.wallpaper_source.clone(),
+        wallpaper_dark: state.wallpaper_source_dark.clone(),
+        wallpaper_tint: state.wallpaper_tint.unwrap_or_default(),
+        wallpaper_strength: state.wallpaper_strength.unwrap_or(DEFAULT_STRENGTH),
+        lock_image: state.lock_source.clone(),
+        lock_blur: shell.lock_blur,
         cursors: interface(&state.cursors_previous, "cursor-theme"),
         // A built-in palette leaves no file, so the record alone says it is on.
         ptyxis: state.ptyxis_previous.is_some(),
@@ -102,7 +122,10 @@ pub fn current(dirs: &Dirs) -> Extras {
             && desktop::home().is_ok_and(|h| vscode::extension_installed(&h)),
         firefox: desktop::home()
             .is_ok_and(|h| firefox::profiles(&h).iter().any(|p| firefox::is_applied(p))),
-        fade: shell_fade::is_installed(&dirs.data),
+        // Installed before the settings file existed: that was Screen Fade alone.
+        fade: shell.fade
+            || (shell_fade::is_installed(&dirs.data)
+                && !shell_fade::config_path(&dirs.data).exists()),
         spotifast: desktop::home().is_ok_and(|h| {
             spotifast::config_dir(&h, &dirs.config).is_some_and(|d| spotifast::path(&d).exists())
         }),
@@ -130,7 +153,9 @@ pub fn apply(
 
     // Hide the changes behind a still of the screen, and fade it away once they are
     // all in, failed or not.
-    desktop::screen_fade("Freeze");
+    if extras.fade {
+        desktop::screen_fade("Freeze");
+    }
     let applied = write_gtk(&GtkConfig::new(&dirs.config), look, dark_now).map(|()| {
         log::info(&format!(
             "applied {} (accent {}) with {extras:?}",
@@ -144,7 +169,9 @@ pub fn apply(
         problems.extend(set_extras(dirs, extras, Some(look)));
         problems
     });
-    desktop::screen_fade("Fade");
+    if extras.fade {
+        desktop::screen_fade("Fade");
+    }
     let mut problems = applied?;
 
     // Last: the watcher syncs from the saved state as soon as it starts, so starting
@@ -224,6 +251,7 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
             "Light style",
             set_light_shell(&mut state, extras.shell && look.is_some()),
         ),
+        ("Wallpaper", set_wallpaper(dirs, &mut state, extras, look)),
         (
             "Icons",
             set_interface(
@@ -250,7 +278,10 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
             set_vscode(dirs, &mut state, when(extras.vscode).map(|l| l.now)),
         ),
         ("Firefox", set_firefox(when(extras.firefox).map(|l| l.now))),
-        ("Screen fade", set_fade(dirs, extras.fade)),
+        (
+            "Lock screen and Screen Fade",
+            set_shell_extension(dirs, &mut state, extras, look),
+        ),
         (
             "Spotifast",
             set_spotifast(dirs, when(extras.spotifast).map(|l| l.now)),
@@ -260,6 +291,7 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
         .into_iter()
         .filter_map(|(what, result)| result.err().map(|e| format!("{what}: {e}")))
         .collect();
+    prune_wallpapers(dirs);
     if let Err(e) = state.save(&path) {
         problems.push(format!("cannot record what Recoolor changed: {e}"));
     }
@@ -341,6 +373,106 @@ fn set_light_shell(state: &mut State, on: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Sets the desktop wallpaper for light and dark style (the Shell switches between
+/// them itself), or puts the user's own background back when neither is set.
+fn set_wallpaper(
+    dirs: &Dirs,
+    state: &mut State,
+    extras: &Extras,
+    look: Option<Look>,
+) -> Result<(), String> {
+    let settings =
+        || desktop::background_settings().ok_or("GNOME's background settings are not installed");
+    let (light, dark) = match look {
+        Some(_) => (
+            extras.wallpaper.as_deref(),
+            extras.wallpaper_dark.as_deref(),
+        ),
+        None => (None, None),
+    };
+    if light.is_none() && dark.is_none() {
+        if let Some(previous) = state.background_previous.clone() {
+            let settings = settings()?;
+            for (key, value) in [
+                ("picture-uri", &previous.picture_uri),
+                ("picture-uri-dark", &previous.picture_uri_dark),
+                ("picture-options", &previous.picture_options),
+            ] {
+                desktop::set_string(&settings, key, value)?;
+            }
+            state.background_previous = None;
+        }
+        state.wallpaper_source = None;
+        state.wallpaper_source_dark = None;
+        state.wallpaper_tint = None;
+        state.wallpaper_strength = None;
+        return Ok(());
+    }
+    let look = look.expect("checked above");
+    for source in light.into_iter().chain(dark) {
+        if !Path::new(source).is_file() {
+            return Err(format!("{source} is not there any more"));
+        }
+    }
+    let settings = settings()?;
+    // A wallpaper of Recoolor's own is never the user's (the state was lost);
+    // fall back to GNOME's default for that key.
+    let user_value = |key: &str| {
+        let value = settings.string(key).to_string();
+        let ours = gio::File::for_uri(&value)
+            .path()
+            .is_some_and(|p| wallpaper::is_ours(&p, &dirs.data));
+        if ours {
+            settings
+                .default_value(key)
+                .and_then(|v| v.str().map(str::to_owned))
+                .unwrap_or_default()
+        } else {
+            value
+        }
+    };
+    let previous = state
+        .background_previous
+        .get_or_insert_with(|| state::Background {
+            picture_uri: user_value("picture-uri"),
+            picture_uri_dark: user_value("picture-uri-dark"),
+            picture_options: settings.string("picture-options").into(),
+        })
+        .clone();
+    state.wallpaper_source = light.map(str::to_owned);
+    state.wallpaper_source_dark = dark.map(str::to_owned);
+    state.wallpaper_tint = Some(extras.wallpaper_tint);
+    state.wallpaper_strength = Some(extras.wallpaper_strength);
+
+    // Each style's image is tinted with that style's palette.
+    let (light_palette, dark_palette) = look.pair.unwrap_or((look.now, look.now));
+    let render = |source: &str, palette: &Palette| {
+        crate::wallpaper::render(
+            &dirs.data,
+            Path::new(source),
+            palette,
+            extras.wallpaper_tint,
+            extras.wallpaper_strength,
+        )
+    };
+    let light_file = light.map(|s| render(s, light_palette)).transpose()?;
+    let dark_file = dark
+        .or(light)
+        .map(|s| render(s, dark_palette))
+        .transpose()?;
+    let uri = |path: &PathBuf| gio::File::for_path(path).uri().to_string();
+    // Light alone covers both styles; dark alone leaves light style as it was.
+    let light_uri = light_file.as_ref().map_or(previous.picture_uri, uri);
+    let dark_uri = dark_file.as_ref().map_or(previous.picture_uri_dark, uri);
+    // Only on a change: the Shell redraws the background on every write.
+    for (key, value) in [("picture-uri", light_uri), ("picture-uri-dark", dark_uri)] {
+        if settings.string(key) != value {
+            desktop::set_string(&settings, key, &value)?;
+        }
+    }
+    Ok(())
+}
+
 fn set_interface(
     previous: &mut Option<String>,
     key: &str,
@@ -415,6 +547,62 @@ fn set_fish(dirs: &Dirs, palette: Option<&Palette>) -> Result<(), String> {
         None => fish::remove(&dirs.config).map(|_| ()),
     }
     .map_err(|e| e.to_string())
+}
+
+/// The Shell extension's two jobs: Screen Fade, and the lock screen image (tinted
+/// like the desktop's, with the palette in effect now). Installed while either is
+/// on.
+fn set_shell_extension(
+    dirs: &Dirs,
+    state: &mut State,
+    extras: &Extras,
+    look: Option<Look>,
+) -> Result<(), String> {
+    let source = extras.lock_image.as_deref().filter(|_| look.is_some());
+    let image = match (source, look) {
+        (Some(source), Some(look)) => {
+            if !Path::new(source).is_file() {
+                return Err(format!("{source} is not there any more"));
+            }
+            let file = crate::wallpaper::render(
+                &dirs.data,
+                Path::new(source),
+                look.now,
+                extras.wallpaper_tint,
+                extras.wallpaper_strength,
+            )?;
+            Some(file.display().to_string())
+        }
+        _ => None,
+    };
+    state.lock_source = source.map(str::to_owned);
+    let config = shell_fade::Config {
+        fade: extras.fade && look.is_some(),
+        lock_image: image,
+        lock_blur: extras.lock_blur,
+    };
+    set_fade(dirs, config.wanted())?;
+    shell_fade::write_config(&dirs.data, &config).map_err(|e| e.to_string())
+}
+
+/// Deletes Recoolor's tinted wallpapers that neither the desktop nor the lock
+/// screen uses any more.
+fn prune_wallpapers(dirs: &Dirs) {
+    let mut keep: Vec<PathBuf> = desktop::background_settings()
+        .map(|s| {
+            ["picture-uri", "picture-uri-dark"]
+                .iter()
+                .filter_map(|key| gio::File::for_uri(&s.string(key)).path())
+                .collect()
+        })
+        .unwrap_or_default();
+    keep.extend(
+        shell_fade::read_config(&dirs.data)
+            .lock_image
+            .map(PathBuf::from),
+    );
+    let keep: Vec<&Path> = keep.iter().map(PathBuf::as_path).collect();
+    wallpaper::prune(&dirs.data, &keep);
 }
 
 fn set_fade(dirs: &Dirs, on: bool) -> Result<(), String> {

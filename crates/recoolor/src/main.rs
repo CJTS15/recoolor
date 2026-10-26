@@ -7,6 +7,7 @@ mod desktop;
 mod log;
 mod targets;
 mod ui;
+mod wallpaper;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
