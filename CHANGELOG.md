@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-10-26
 
 - Smooth color changes: with Screen Fade on, switching light/dark or the accent
   now crossfades too, not only Apply, and the fade is gentler. The Shell theme
