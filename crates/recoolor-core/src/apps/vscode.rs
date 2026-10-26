@@ -21,6 +21,15 @@ pub fn extension_dir(home: &Path) -> PathBuf {
     home.join(".vscode/extensions/recoolor.recoolor-theme-1.0.0")
 }
 
+/// The theme file for one variant.
+pub fn theme_path(home: &Path, variant: Variant) -> PathBuf {
+    let file = match variant {
+        Variant::Dark => "dark.json",
+        Variant::Light => "light.json",
+    };
+    extension_dir(home).join("themes").join(file)
+}
+
 pub fn settings_path(config_home: &Path) -> PathBuf {
     config_home.join("Code/User/settings.json")
 }
@@ -59,10 +68,14 @@ pub fn write_extension(home: &Path, palette: &Palette) -> Result<(), ApplyError>
     let dir = extension_dir(home);
     write_owned(&dir.join("package.json"), PACKAGE)?;
     let theme = theme(palette);
-    for (variant, file) in [(Variant::Dark, "dark.json"), (Variant::Light, "light.json")] {
-        let path = dir.join("themes").join(file);
+    let themes = dir.join("themes");
+    fs::create_dir_all(&themes).map_err(io_err(&themes))?;
+    for variant in [Variant::Dark, Variant::Light] {
+        let path = theme_path(home, variant);
         if variant == palette.variant || !path.exists() {
-            write_atomic(&path, &theme)?;
+            // In place, not renamed over: `_watch` follows the file it first saw, so a
+            // replaced file is reloaded once and then never again.
+            fs::write(&path, &theme).map_err(io_err(&path))?;
         }
     }
     Ok(())
@@ -412,6 +425,21 @@ mod tests {
         write_extension(home.path(), &latte).unwrap();
         assert!(extension_installed(home.path()));
         assert!(extension_dir(home.path()).join("themes/dark.json").exists());
+        // Rewritten in place, so VS Code's watch on it keeps working.
+        let light = extension_dir(home.path()).join("themes/light.json");
+        let inode = || std::os::unix::fs::MetadataExt::ino(&fs::metadata(&light).unwrap());
+        let before = inode();
+        let rose = bundled()
+            .into_iter()
+            .find(|p| p.id == "rose-pine-dawn")
+            .unwrap();
+        write_extension(home.path(), &rose).unwrap();
+        assert_eq!(inode(), before);
+        assert!(
+            fs::read_to_string(&light)
+                .unwrap()
+                .contains("rose-pine-dawn")
+        );
         assert!(remove_extension(home.path()).unwrap());
         assert!(!extension_dir(home.path()).exists());
     }
