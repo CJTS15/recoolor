@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Smooth color changes: with Screen Fade on, switching light/dark or the accent
+  now crossfades too, not only Apply, and the fade is gentler. The Shell theme
+  reloads once, without a flash of GNOME's default theme. Log out and back in
+  once after updating.
+- The watch service restarts itself after an update, instead of running the old
+  version until the next login.
+
 ## 1.0.1 — 2026-10-26
 
 - VS Code: follows every Apply and light/dark switch. It stopped reloading the

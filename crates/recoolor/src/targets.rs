@@ -396,11 +396,11 @@ fn set_shell(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resul
     shell::write(&dirs.data, &css).map_err(|e| e.to_string())?;
     let name = settings.string("name").to_string();
     state.shell_previous.get_or_insert_with(|| name.clone());
-    // Reloading flashes the default theme, so only when there is something new.
-    if changed {
-        desktop::reload_shell_theme(&settings)
-    } else if name != shell::THEME_NAME {
+    // Selecting the theme loads it; otherwise reload only when there is something new.
+    if name != shell::THEME_NAME {
         desktop::set_string(&settings, "name", shell::THEME_NAME)
+    } else if changed {
+        desktop::reload_shell_theme(&settings)
     } else {
         Ok(())
     }
@@ -908,14 +908,16 @@ pub fn watch(dirs: Dirs) -> Result<(), String> {
             desktop::prefers_dark(settings),
             desktop::accent_choice(settings),
         );
-        if last.borrow().as_ref() == Some(&now) {
-            return;
+        if last.borrow().as_ref() != Some(&now) {
+            *last.borrow_mut() = Some(now);
+            if let Err(e) = sync(&dirs, settings) {
+                log::error(&format!("recoolor watch: {e}"));
+                eprintln!("recoolor watch: {e}");
+            }
         }
-        *last.borrow_mut() = Some(now);
-        if let Err(e) = sync(&dirs, settings) {
-            log::error(&format!("recoolor watch: {e}"));
-            eprintln!("recoolor watch: {e}");
-        }
+        // Recoolor's Shell extension froze the screen on the switch; fade to the new
+        // look, also when there was nothing to do.
+        desktop::screen_fade("Fade");
     };
     // Reading the keys here also subscribes to their changes.
     sync(&settings);
