@@ -81,6 +81,51 @@ pub fn shell_blur(palette: &Palette, bms_css: &str) -> String {
     )
 }
 
+/// Blur my Shell's "Preserve shell theme" mode still paints its popups and
+/// notification cards translucent white or grey, and an extension's stylesheet
+/// outranks any Shell theme. These rules go in Recoolor's own extension stylesheet,
+/// which ranks like Blur my Shell's, with the class doubled to outrank its rules:
+/// the palette's window and card colors at 90%, matching the apps with the blur
+/// faintly behind.
+pub fn shell_popups(palette: &Palette, bms_css: &str) -> String {
+    let c = &palette.colors;
+    let mut lines: Vec<String> = Vec::new();
+    for (sels, body) in rules(bms_css) {
+        // Only where it paints a background.
+        if !body.contains("background") || body.contains("transparent") {
+            continue;
+        }
+        for sel in sels.split(',').map(str::trim) {
+            for variant in ["light", "dark"] {
+                let class = format!(".bms-popup-surface-{variant}");
+                let Some(inner) = sel.strip_prefix(&format!("{class} ")) else {
+                    continue;
+                };
+                let color = match inner {
+                    ".message" | ".message-list .message" | ".quick-toggle-menu" => c.surface,
+                    ".message-list .message:hover" => c.surface.mix(c.text, 0.05),
+                    ".message-list .message:active" | ".message-list .message:focus" => {
+                        c.surface.mix(c.text, 0.1)
+                    }
+                    ".message:second-in-stack" => c.surface.mix(c.base, 0.3),
+                    ".message:lower-in-stack" => c.surface.mix(c.base, 0.6),
+                    // The popups and dialogs themselves.
+                    _ if !inner.contains([' ', ':', '>']) => c.base,
+                    _ => continue,
+                };
+                let line = format!(
+                    "{class}{class} {inner} {{ background-color: rgba({}, {}, {}, 0.9) !important; }}",
+                    color.r, color.g, color.b
+                );
+                if !lines.contains(&line) {
+                    lines.push(line);
+                }
+            }
+        }
+    }
+    lines.join("\n")
+}
+
 /// `(selectors, body)` of each top-level rule; Blur my Shell's sheet has no nesting.
 fn rules(css: &str) -> impl Iterator<Item = (&str, &str)> {
     css.split('}').filter_map(|rule| {
@@ -274,6 +319,30 @@ mod tests {
             ".bms-popup-surface-light .switcher-arrow { color: rgba(76, 79, 105, 0.85) !important; }"
         ));
         assert_eq!(shell_blur(&mocha, ""), "");
+    }
+
+    #[test]
+    fn popups_take_the_palette_at_90_percent() {
+        let mocha = palette("catppuccin-mocha");
+        let bms = ".bms-popup-surface-dark .popup-menu-content,\n\
+            .bms-popup-surface-dark .quick-settings { background: rgba(30, 30, 33, 0.5) !important; }\n\
+            .bms-popup-surface-light .message-list .message:hover { background: rgba(255, 255, 255, 0.4) !important; }\n\
+            .bms-popup-surface-dark .message-media-control { background-color: transparent; }\n\
+            .bms-popup-surface-dark .modal-dialog { border: 1px solid rgba(255, 255, 255, 0.1); }\n\
+            .bms-popup-background-dark .quick-toggle { background-color: rgba(255, 255, 255, 0.1); }\n";
+        let css = shell_popups(&mocha, bms);
+        // Base (#1e1e2e) for the popups, surface (#313244) for cards.
+        assert!(css.contains(
+            ".bms-popup-surface-dark.bms-popup-surface-dark .quick-settings { background-color: rgba(30, 30, 46, 0.9) !important; }"
+        ));
+        assert!(css.contains(
+            ".bms-popup-surface-light.bms-popup-surface-light .message-list .message:hover { background-color: rgba("
+        ));
+        // Not where it paints nothing, nor its other mode.
+        assert!(!css.contains("media-control"));
+        assert!(!css.contains("modal-dialog"));
+        assert!(!css.contains("quick-toggle "));
+        assert_eq!(shell_popups(&mocha, ""), "");
     }
 
     #[test]

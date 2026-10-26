@@ -262,6 +262,11 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
             "Flatpak apps",
             set_flatpak(dirs, &mut state, extras.flatpak),
         ),
+        // Before the Shell theme, whose reload picks up the extension's stylesheet.
+        (
+            "Lock screen and Screen Fade",
+            set_shell_extension(dirs, &mut state, extras, look),
+        ),
         (
             "GNOME Shell",
             set_shell(dirs, &mut state, when(extras.shell).map(|l| l.now)),
@@ -329,10 +334,6 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
             set_kde(dirs, when(extras.kde).map(|l| l.now)),
         ),
         (
-            "Lock screen and Screen Fade",
-            set_shell_extension(dirs, &mut state, extras, look),
-        ),
-        (
             "Spotifast",
             set_spotifast(dirs, when(extras.spotifast).map(|l| l.now)),
         ),
@@ -368,6 +369,7 @@ fn set_flatpak(dirs: &Dirs, state: &mut State, on: bool) -> Result<(), String> {
 
 fn set_shell(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Result<(), String> {
     let Some(palette) = palette else {
+        set_popups(dirs, "")?;
         shell::remove(&dirs.data).map_err(|e| e.to_string())?;
         // Forget the previous value only once it is back, so a failed restore can retry.
         if let Some(previous) = state.shell_previous.clone() {
@@ -385,7 +387,12 @@ fn set_shell(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resul
         return Err("turn on the User Themes extension (in Extensions) first".into());
     }
     let css = desktop::shell_css(palette, &dirs.data)?;
-    let changed = std::fs::read_to_string(shell::css_path(&dirs.data)).ok() != Some(css.clone());
+    let popups = desktop::blur_my_shell_css(&dirs.data)
+        .map(|bms| recoolor_core::css::shell_popups(palette, &bms))
+        .unwrap_or_default();
+    let popups_changed = set_popups(dirs, &popups)?;
+    let changed = popups_changed
+        || std::fs::read_to_string(shell::css_path(&dirs.data)).ok() != Some(css.clone());
     shell::write(&dirs.data, &css).map_err(|e| e.to_string())?;
     let name = settings.string("name").to_string();
     state.shell_previous.get_or_insert_with(|| name.clone());
@@ -648,9 +655,21 @@ fn set_btop(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Result
     Ok(())
 }
 
-/// The Shell extension's two jobs: Screen Fade, and the lock screen image (tinted
-/// like the desktop's, with the palette in effect now). Installed while either is
-/// on.
+/// Blur my Shell's popups in the palette, in Recoolor's extension stylesheet (see
+/// `css::shell_popups`). Returns whether it changed.
+fn set_popups(dirs: &Dirs, css: &str) -> Result<bool, String> {
+    if !shell_fade::is_installed(&dirs.data) {
+        return Ok(false);
+    }
+    let path = shell_fade::stylesheet_path(&dirs.data);
+    let before = std::fs::read_to_string(&path).unwrap_or_default();
+    shell_fade::write_stylesheet(&dirs.data, css).map_err(|e| e.to_string())?;
+    Ok(std::fs::read_to_string(&path).unwrap_or_default() != before)
+}
+
+/// The Shell extension's jobs: Screen Fade, the lock screen image (tinted like the
+/// desktop's, with the palette in effect now), and Blur my Shell's popups while
+/// the Shell is themed. Installed while any is on.
 fn set_shell_extension(
     dirs: &Dirs,
     state: &mut State,
@@ -679,6 +698,7 @@ fn set_shell_extension(
         fade: extras.fade && look.is_some(),
         lock_image: image,
         lock_blur: extras.lock_blur,
+        popups: extras.shell && look.is_some() && desktop::blur_my_shell_css(&dirs.data).is_some(),
     };
     set_fade(dirs, config.wanted())?;
     shell_fade::write_config(&dirs.data, &config).map_err(|e| e.to_string())
