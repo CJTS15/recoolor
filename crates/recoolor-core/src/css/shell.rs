@@ -24,7 +24,45 @@ const BLACK: Color = Color::rgb(0, 0, 0);
 
 /// `default_css` must be the Shell stylesheet for `palette.variant`.
 pub fn shell(palette: &Palette, default_css: &str) -> String {
-    header(&palette.id) + &recolor(palette, pristine(default_css))
+    header(&palette.id)
+        + &recolor(palette, pristine(default_css))
+        + &osd_level(palette)
+        + &light_switcher(palette)
+}
+
+/// GNOME keeps the Alt+Tab switcher dark in light style too; Recoolor makes it
+/// follow the style, with the palette's text and a highlight to match.
+/// Important, to outrank the switcher's own rules for each item state.
+fn light_switcher(palette: &Palette) -> String {
+    if palette.variant != Variant::Light {
+        return String::new();
+    }
+    let c = &palette.colors;
+    let t = c.text;
+    format!(
+        ".switcher-list {{ background-color: {} !important; }}\n\
+         .switcher-list, .switcher-list .item-box, .switcher-arrow {{ color: {} !important; }}\n\
+         .switcher-list .item-box:hover, .switcher-list .item-box:focus, \
+         .switcher-list .item-box:selected {{ background-color: rgba({}, {}, {}, 0.12) !important; }}\n",
+        c.base, t, t.r, t.g, t.b
+    )
+}
+
+/// The volume and brightness OSD's bar in the accent, as quick settings' sliders
+/// are, over a track in the OSD's light text (GNOME keeps the OSD dark in both
+/// styles). Important, to outrank Blur my Shell's light-surface rule that
+/// `shell_blur` moves in, which assumes a light OSD.
+fn osd_level(palette: &Palette) -> String {
+    let c = &palette.colors;
+    let fg = match palette.variant {
+        Variant::Light => c.base,
+        Variant::Dark => c.text,
+    };
+    format!(
+        "\n.osd-window .level {{ -barlevel-active-background-color: {} !important; \
+         -barlevel-background-color: rgba({}, {}, {}, 0.3) !important; }}\n",
+        c.accent, fg.r, fg.g, fg.b
+    )
 }
 
 /// Blur my Shell's "Preserve shell theme" mode keeps the theme's own solid colors
@@ -65,16 +103,6 @@ pub fn shell_blur(palette: &Palette, bms_css: &str) -> String {
     if css.is_empty() {
         return css;
     }
-    // GNOME keeps the app switcher dark with white labels even in light style;
-    // preserve mode lightens its background but not its text, so set the text
-    // the way Blur my Shell's other mode does (black and white map through the
-    // palette to its darkest and lightest).
-    css.push_str(
-        ".bms-popup-surface-light .switcher-list, .bms-popup-surface-light .switcher-list .item-box, \
-         .bms-popup-surface-light .switcher-arrow { color: rgba(0, 0, 0, 0.85) !important; }\n\
-         .bms-popup-surface-dark .switcher-list, .bms-popup-surface-dark .switcher-list .item-box, \
-         .bms-popup-surface-dark .switcher-arrow { color: rgba(255, 255, 255, 0.9) !important; }\n",
-    );
     format!(
         "\n/* Blur my Shell, preserve-theme mode: translucent inner elements. */\n{}",
         recolor(palette, &css)
@@ -109,6 +137,16 @@ pub fn shell_popups(palette: &Palette, bms_css: &str) -> String {
                     }
                     ".message:second-in-stack" => c.surface.mix(c.base, 0.3),
                     ".message:lower-in-stack" => c.surface.mix(c.base, 0.6),
+                    // GNOME keeps these dark with light text in light style too (and the
+                    // Alt+Tab switcher, which Recoolor makes follow the style).
+                    ".osd-window"
+                    | ".workspace-switcher"
+                    | ".resize-popup"
+                    | ".screenshot-ui-panel"
+                        if palette.variant == Variant::Light =>
+                    {
+                        c.text
+                    }
                     // The popups and dialogs themselves.
                     _ if !inner.contains([' ', ':', '>']) => c.base,
                     _ => continue,
@@ -124,6 +162,23 @@ pub fn shell_popups(palette: &Palette, bms_css: &str) -> String {
         }
     }
     lines.join("\n")
+}
+
+/// SearchLightNG, a search popup: with its blur synced to Blur my Shell it ignores
+/// its own background color and always uses white text. A palette tint on its
+/// border layer (between the blur and the results) and the palette's text, with
+/// two ids to outrank its own one-id rules.
+pub fn searchlight(palette: &Palette) -> String {
+    let c = &palette.colors;
+    let rgba =
+        |color: Color, alpha: f32| format!("rgba({}, {}, {}, {alpha})", color.r, color.g, color.b);
+    format!(
+        "#searchLight #searchLightBorder {{ background-color: {}; }}\n\
+         #searchLight #searchLightBox * {{ color: {} !important; }}\n\
+         #searchLight #searchLightBox StBoxLayout.search-section-content {{ background-color: transparent !important; }}",
+        rgba(c.base, 0.9),
+        c.text
+    )
 }
 
 /// `(selectors, body)` of each top-level rule; Blur my Shell's sheet has no nesting.
@@ -313,11 +368,6 @@ mod tests {
         ));
         assert!(!css.contains("surface-dark .quick-settings"));
         assert!(css.contains("background-color: st-transparentize(#cba6f7, 0.25) !important;"));
-        // Switcher labels: dark on the light surface, light on the dark one.
-        let latte = palette("catppuccin-latte");
-        assert!(shell_blur(&latte, bms).contains(
-            ".bms-popup-surface-light .switcher-arrow { color: rgba(76, 79, 105, 0.85) !important; }"
-        ));
         assert_eq!(shell_blur(&mocha, ""), "");
     }
 
@@ -343,6 +393,49 @@ mod tests {
         assert!(!css.contains("modal-dialog"));
         assert!(!css.contains("quick-toggle "));
         assert_eq!(shell_popups(&mocha, ""), "");
+        // OSDs stay dark in light style: the palette's text (#4c4f69), not its base.
+        let latte = palette("catppuccin-latte");
+        let osd = ".bms-popup-surface-light .osd-window { background: rgba(255, 255, 255, 0.65) !important; }";
+        assert!(
+            shell_popups(&latte, osd)
+                .contains("osd-window { background-color: rgba(76, 79, 105, 0.9)")
+        );
+        assert!(
+            shell_popups(&mocha, &osd.replace("light", "dark")).contains("rgba(30, 30, 46, 0.9)")
+        );
+    }
+
+    #[test]
+    fn osd_bar_takes_the_accent() {
+        let latte = palette("catppuccin-latte").with_accent(Some("teal"));
+        let css = shell(&latte, "");
+        assert!(css.contains(&format!(
+            ".osd-window .level {{ -barlevel-active-background-color: {} !important; \
+             -barlevel-background-color: rgba(239, 241, 245, 0.3) !important; }}",
+            latte.colors.accent
+        )));
+    }
+
+    #[test]
+    fn alt_tab_switcher_follows_the_style() {
+        let latte = palette("catppuccin-latte");
+        let css = shell(&latte, "");
+        assert!(css.contains(".switcher-list { background-color: #eff1f5 !important; }"));
+        assert!(css.contains(".switcher-arrow { color: #4c4f69 !important; }"));
+        let switcher = ".bms-popup-surface-light .switcher-list { background: rgba(255, 255, 255, 0.65) !important; }";
+        assert!(shell_popups(&latte, switcher).contains("rgba(239, 241, 245, 0.9)"));
+        // Dark style keeps GNOME's own.
+        assert!(!shell(&palette("catppuccin-mocha"), "").contains(".switcher-list"));
+    }
+
+    #[test]
+    fn searchlight_takes_the_palette() {
+        let latte = palette("catppuccin-latte");
+        let css = searchlight(&latte);
+        assert!(css.contains(
+            "#searchLight #searchLightBorder { background-color: rgba(239, 241, 245, 0.9); }"
+        ));
+        assert!(css.contains("#searchLight #searchLightBox * { color: #4c4f69 !important; }"));
     }
 
     #[test]

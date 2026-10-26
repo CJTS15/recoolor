@@ -35,8 +35,10 @@ struct Window {
     pair: adw::SwitchRow,
     light_row: adw::ComboRow,
     dark_row: adw::ComboRow,
-    apply: gtk::Button,
-    reset: gtk::Button,
+    /// Apply, with Reset in its dropdown.
+    apply: adw::SplitButton,
+    apply_action: gtk::gio::SimpleAction,
+    reset_action: gtk::gio::SimpleAction,
     /// Set while Apply or Reset runs on a worker thread.
     busy: Cell<bool>,
     style: adw::StyleManager,
@@ -59,24 +61,37 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     let dirs = Dirs::find().ok();
 
     let title = adw::WindowTitle::new("Recoolor", "");
-    let apply = gtk::Button::builder()
+    // Actions, so Reset in the dropdown stays usable while Apply is off.
+    let apply_action = gtk::gio::SimpleAction::new("apply", None);
+    apply_action.set_enabled(false);
+    let reset_action = gtk::gio::SimpleAction::new("reset", None);
+    reset_action.set_enabled(dirs.is_some());
+    let apply_menu = gtk::gio::Menu::new();
+    apply_menu.append(Some("Reset"), Some("win.reset"));
+    let apply = adw::SplitButton::builder()
         .label("Apply")
+        .action_name("win.apply")
+        .menu_model(&apply_menu)
+        .dropdown_tooltip("Reset: remove Recoolor's styles and bring back what you had before")
         .css_classes(["suggested-action"])
-        .sensitive(false)
-        .build();
-    let reset = gtk::Button::builder()
-        .label("Reset")
-        .tooltip_text("Remove Recoolor's styles and bring back what you had before")
-        .sensitive(dirs.is_some())
         .build();
     let show_all = gtk::ToggleButton::builder()
         .label("Show All")
         .tooltip_text("Show light and dark palettes")
+        .halign(gtk::Align::End)
+        .margin_top(12)
+        .margin_end(12)
+        .build();
+    let menu = gtk::gio::Menu::new();
+    menu.append(Some("About Recoolor"), Some("app.about"));
+    let main_menu = gtk::MenuButton::builder()
+        .icon_name("emote-love-symbolic")
+        .tooltip_text("About Recoolor")
+        .menu_model(&menu)
         .build();
     let header = adw::HeaderBar::builder().title_widget(&title).build();
-    header.pack_start(&reset);
+    header.pack_start(&main_menu);
     header.pack_end(&apply);
-    header.pack_end(&show_all);
 
     let no_config = adw::Banner::builder()
         .title(
@@ -167,14 +182,20 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     side.append(&extras.apps_group);
     side.append(&preview::build());
 
-    let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    content.append(
+    let palette_column = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .hexpand(true)
+        .build();
+    palette_column.append(&show_all);
+    palette_column.append(
         &gtk::ScrolledWindow::builder()
             .child(&grid)
-            .hexpand(true)
+            .vexpand(true)
             .hscrollbar_policy(gtk::PolicyType::Never)
             .build(),
     );
+    let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    content.append(&palette_column);
     content.append(&gtk::Separator::new(gtk::Orientation::Vertical));
     content.append(
         &gtk::ScrolledWindow::builder()
@@ -260,8 +281,9 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         pair: pair.clone(),
         light_row: light_row.clone(),
         dark_row: dark_row.clone(),
-        apply: apply.clone(),
-        reset: reset.clone(),
+        apply,
+        apply_action: apply_action.clone(),
+        reset_action: reset_action.clone(),
         busy: Cell::new(false),
         style: adw::StyleManager::default(),
         interface,
@@ -313,9 +335,11 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         .slack
         .connect_clicked(move |_| w.show_slack_colors());
     let w = win.clone();
-    apply.connect_clicked(move |_| w.on_apply());
+    apply_action.connect_activate(move |_, _| w.on_apply());
     let w = win.clone();
-    reset.connect_clicked(move |_| w.on_reset());
+    reset_action.connect_activate(move |_, _| w.on_reset());
+    window.add_action(&apply_action);
+    window.add_action(&reset_action);
 
     let details = errors
         .iter()
@@ -418,8 +442,8 @@ impl Window {
         } else {
             self.selected().is_some()
         };
-        self.apply
-            .set_sensitive(ready && self.dirs.is_some() && !self.busy.get());
+        self.apply_action
+            .set_enabled(ready && self.dirs.is_some() && !self.busy.get());
     }
 
     fn set_preview(&self, css: Option<&str>) {
@@ -599,8 +623,8 @@ impl Window {
         if self.busy.replace(true) {
             return;
         }
-        self.apply.set_sensitive(false);
-        self.reset.set_sensitive(false);
+        self.apply_action.set_enabled(false);
+        self.reset_action.set_enabled(false);
         self.apply.set_child(Some(&adw::Spinner::new()));
         let hold = self.window.application().map(|app| app.hold());
         let w = self.clone();
@@ -609,7 +633,7 @@ impl Window {
             drop(hold);
             w.busy.set(false);
             w.apply.set_label("Apply");
-            w.reset.set_sensitive(w.dirs.is_some());
+            w.reset_action.set_enabled(w.dirs.is_some());
             match result {
                 Ok(value) => done(&w, value),
                 // `alert` logs it; the panic message itself went to stderr.
