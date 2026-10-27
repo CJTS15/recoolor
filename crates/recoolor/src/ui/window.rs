@@ -36,8 +36,9 @@ struct Window {
     pair: adw::SwitchRow,
     light_row: adw::ComboRow,
     dark_row: adw::ComboRow,
-    /// Apply, with Reset in its dropdown.
-    apply: adw::SplitButton,
+    /// Apply, with Reset in its dropdown: atop the side pane, and in a bottom bar
+    /// that only the narrow layout shows.
+    apply: [adw::SplitButton; 2],
     apply_action: gtk::gio::SimpleAction,
     reset_action: gtk::gio::SimpleAction,
     /// Set while Apply or Reset runs on a worker thread.
@@ -68,14 +69,16 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     let reset_action = gtk::gio::SimpleAction::new("reset", None);
     reset_action.set_enabled(dirs.is_some());
     let apply_menu = gtk::gio::Menu::new();
-    apply_menu.append(Some("Reset"), Some("win.reset"));
-    let apply = adw::SplitButton::builder()
-        .label("Apply")
-        .action_name("win.apply")
-        .menu_model(&apply_menu)
-        .dropdown_tooltip("Reset: remove Recoolor's styles and bring back what you had before")
-        .css_classes(["suggested-action"])
-        .build();
+    apply_menu.append(Some("Reset…"), Some("win.reset"));
+    let apply = [(); 2].map(|_| {
+        adw::SplitButton::builder()
+            .label("Apply")
+            .action_name("win.apply")
+            .menu_model(&apply_menu)
+            .dropdown_tooltip("Reset: remove Recoolor's styles and bring back what you had before")
+            .css_classes(["suggested-action"])
+            .build()
+    });
     let show_all = gtk::ToggleButton::builder()
         .label("Show All")
         .tooltip_text("Show light and dark palettes")
@@ -84,13 +87,13 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     let menu = gtk::gio::Menu::new();
     menu.append(Some("About Recoolor"), Some("app.about"));
     let main_menu = gtk::MenuButton::builder()
-        .icon_name("emote-love-symbolic")
-        .tooltip_text("About Recoolor")
+        .icon_name("open-menu-symbolic")
+        .tooltip_text("Main Menu")
+        .primary(true)
         .menu_model(&menu)
         .build();
     let header = adw::HeaderBar::builder().title_widget(&title).build();
-    header.pack_start(&main_menu);
-    header.pack_end(&apply);
+    header.pack_end(&main_menu);
 
     let no_config = adw::Banner::builder()
         .title(
@@ -133,9 +136,17 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     let (light, dark) = (indices(Variant::Light), indices(Variant::Dark));
     let combo = |title: &str, indices: &[usize], default: &str| {
         let names: Vec<&str> = indices.iter().map(|&i| palettes[i].name.as_str()).collect();
+        // Searchable, by the palette's name: there are dozens of each style.
         let row = adw::ComboRow::builder()
             .title(title)
             .model(&gtk::StringList::new(&names))
+            .expression(gtk::PropertyExpression::new(
+                gtk::StringObject::static_type(),
+                gtk::Expression::NONE,
+                "string",
+            ))
+            .enable_search(true)
+            .search_match_mode(gtk::StringFilterMatchMode::Substring)
             .build();
         if let Some(pos) = indices.iter().position(|&i| palettes[i].id == default) {
             row.set_selected(pos as u32);
@@ -154,7 +165,9 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
             .sync_create()
             .build();
     }
-    let pair_group = adw::PreferencesGroup::new();
+    let pair_group = adw::PreferencesGroup::builder()
+        .title("System Style")
+        .build();
     pair_group.add(&pair);
     pair_group.add(&light_row);
     pair_group.add(&dark_row);
@@ -173,13 +186,14 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     }
     let interface = desktop::interface_settings();
     let accent = interface.as_ref().and_then(AccentRow::new);
+    side.append(&apply[0]);
+    side.append(&preview::build());
     side.append(&pair_group);
     if let Some(accent) = &accent {
         side.append(&accent.group);
     }
     side.append(&extras.group);
     side.append(&extras.apps_group);
-    side.append(&preview::build());
 
     let palette_column = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
@@ -195,31 +209,47 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     tools.append(&search);
     tools.append(&show_all);
     palette_column.append(&tools);
-    palette_column.append(
-        &gtk::ScrolledWindow::builder()
-            .child(&grid)
-            .vexpand(true)
-            .hscrollbar_policy(gtk::PolicyType::Never)
-            .build(),
-    );
+    let palette_scroll = gtk::ScrolledWindow::builder()
+        .child(&grid)
+        .vexpand(true)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .build();
+    palette_column.append(&palette_scroll);
+    let separator = gtk::Separator::new(gtk::Orientation::Vertical);
+    let side_scroll = gtk::ScrolledWindow::builder()
+        .child(&side)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .width_request(380)
+        .hexpand(false)
+        .build();
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     content.append(&palette_column);
-    content.append(&gtk::Separator::new(gtk::Orientation::Vertical));
-    content.append(
-        &gtk::ScrolledWindow::builder()
-            .child(&side)
-            .hscrollbar_policy(gtk::PolicyType::Never)
-            .width_request(380)
-            .hexpand(false)
-            .build(),
-    );
+    content.append(&separator);
+    content.append(&side_scroll);
+    // Wide, each column scrolls on its own; narrow, they stack and this scrolls both.
+    let page = gtk::ScrolledWindow::builder()
+        .child(&content)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Never)
+        .build();
     let toasts = adw::ToastOverlay::new();
-    toasts.set_child(Some(&content));
+    toasts.set_child(Some(&page));
+
+    let bottom = gtk::Box::builder()
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+    apply[1].set_hexpand(true);
+    bottom.append(&apply[1]);
 
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.add_top_bar(&no_config);
     toolbar.add_top_bar(&broken);
+    toolbar.add_bottom_bar(&bottom);
+    toolbar.set_reveal_bottom_bars(false);
     toolbar.set_content(Some(&toasts));
 
     let window = adw::ApplicationWindow::builder()
@@ -227,8 +257,53 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         .title("Recoolor")
         .default_width(1060)
         .default_height(700)
+        .width_request(360)
+        .height_request(294)
         .content(&toolbar)
         .build();
+
+    // Narrow windows (phones, tiled halves): one scrolling column with one card per
+    // line, the side pane under the palettes, and Apply in a bottom bar so it stays
+    // in reach.
+    let narrow = adw::Breakpoint::new(
+        adw::BreakpointCondition::parse("max-width: 720sp").expect("valid breakpoint"),
+    );
+    let never = gtk::PolicyType::Never;
+    narrow.add_setter(
+        &content,
+        "orientation",
+        Some(&gtk::Orientation::Vertical.to_value()),
+    );
+    narrow.add_setter(
+        &separator,
+        "orientation",
+        Some(&gtk::Orientation::Horizontal.to_value()),
+    );
+    narrow.add_setter(&side_scroll, "width-request", Some(&(-1).to_value()));
+    narrow.add_setter(
+        &palette_scroll,
+        "vscrollbar-policy",
+        Some(&never.to_value()),
+    );
+    narrow.add_setter(&side_scroll, "vscrollbar-policy", Some(&never.to_value()));
+    narrow.add_setter(
+        &page,
+        "vscrollbar-policy",
+        Some(&gtk::PolicyType::Automatic.to_value()),
+    );
+    narrow.add_setter(&grid, "min-children-per-line", Some(&1u32.to_value()));
+    narrow.add_setter(&grid, "max-children-per-line", Some(&1u32.to_value()));
+    narrow.add_setter(&apply[0], "visible", Some(&false.to_value()));
+    narrow.add_setter(&toolbar, "reveal-bottom-bars", Some(&true.to_value()));
+    window.add_breakpoint(narrow);
+
+    // Wide windows (maximized or fullscreen): four cards per line.
+    let wide = adw::Breakpoint::new(
+        adw::BreakpointCondition::parse("min-width: 1400sp").expect("valid breakpoint"),
+    );
+    wide.add_setter(&grid, "min-children-per-line", Some(&4u32.to_value()));
+    wide.add_setter(&grid, "max-children-per-line", Some(&4u32.to_value()));
+    window.add_breakpoint(wide);
     // A single-selection FlowBox selects whatever has focus, which would start a
     // preview before the user picks anything.
     GtkWindowExt::set_focus(&window, Some(&show_all));
@@ -348,7 +423,7 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     let w = win.clone();
     apply_action.connect_activate(move |_, _| w.on_apply());
     let w = win.clone();
-    reset_action.connect_activate(move |_, _| w.on_reset());
+    reset_action.connect_activate(move |_, _| w.confirm_reset());
     window.add_action(&apply_action);
     window.add_action(&reset_action);
 
@@ -613,6 +688,22 @@ impl Window {
         );
     }
 
+    fn confirm_reset(self: &Rc<Self>) {
+        let dialog = adw::AlertDialog::new(
+            Some("Reset Recoolor?"),
+            Some(
+                "This removes Recoolor's styles from GTK, the Shell and the apps it themed, and brings back what you had before.",
+            ),
+        );
+        dialog.add_responses(&[("cancel", "_Cancel"), ("reset", "_Reset")]);
+        dialog.set_response_appearance("reset", adw::ResponseAppearance::Destructive);
+        dialog.set_default_response(Some("cancel"));
+        dialog.set_close_response("cancel");
+        let w = self.clone();
+        dialog.connect_response(Some("reset"), move |_, _| w.on_reset());
+        dialog.present(Some(&self.window));
+    }
+
     fn on_reset(self: &Rc<Self>) {
         let Some(dirs) = self.dirs.clone() else {
             return;
@@ -647,14 +738,24 @@ impl Window {
         }
         self.apply_action.set_enabled(false);
         self.reset_action.set_enabled(false);
-        self.apply.set_child(Some(&adw::Spinner::new()));
+        for apply in &self.apply {
+            let busy = gtk::Box::builder()
+                .spacing(6)
+                .halign(gtk::Align::Center)
+                .build();
+            busy.append(&adw::Spinner::new());
+            busy.append(&gtk::Label::new(Some("Apply")));
+            apply.set_child(Some(&busy));
+        }
         let hold = self.window.application().map(|app| app.hold());
         let w = self.clone();
         gtk::glib::spawn_future_local(async move {
             let result = gtk::gio::spawn_blocking(work).await;
             drop(hold);
             w.busy.set(false);
-            w.apply.set_label("Apply");
+            for apply in &w.apply {
+                apply.set_label("Apply");
+            }
             w.reset_action.set_enabled(w.dirs.is_some());
             match result {
                 Ok(value) => done(&w, value),
