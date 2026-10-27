@@ -885,16 +885,32 @@ fn set_vscode(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resu
         // VS Code reads each theme file once per session and watches only the current
         // one, so the theme it switches to may be stale. Rewrite it unchanged once VS
         // Code has switched, which reloads it.
-        // ponytail: the CLI exits before this runs; only the window and the watcher get it.
         let theme = vscode::theme_path(&home, palette.variant);
-        std::thread::spawn(move || {
+        let rewrite = std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(2));
             if let Ok(contents) = std::fs::read(&theme) {
                 let _ = std::fs::write(&theme, contents);
             }
         });
+        PENDING
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(rewrite);
     }
     Ok(())
+}
+
+/// Background work that must finish before the process exits (VS Code's delayed
+/// theme rewrite). The window and the watcher keep running anyway.
+static PENDING: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Waits for the background work started by `apply`, for the one-shot command line.
+pub fn finish_pending() {
+    let pending = std::mem::take(&mut *PENDING.lock().unwrap_or_else(|e| e.into_inner()));
+    for handle in pending {
+        let _ = handle.join();
+    }
 }
 
 /// `recoolor watch`: keeps what Recoolor applied in step with GNOME. A light/dark switch
