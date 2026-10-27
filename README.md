@@ -37,7 +37,9 @@ Recoolor changed is put back, then `sudo dnf remove recoolor` or
 ## Using it
 
 Open **Recoolor**, pick a palette card to preview it on Recoolor's own window, turn
-on what else it should theme, and **Apply**. **Reset** undoes all of it.
+on what else it should theme, and **Apply**. **Reset**, in Apply's dropdown, undoes
+all of it. The search box above the palettes finds one by name, in light or dark;
+**Show All** lists both styles. The heart menu has **About Recoolor**.
 
 - **Light and dark:** turn on **Follow System Style** to use one palette in light
   style and another in dark. Everything switches with GNOME's Dark Style toggle.
@@ -69,7 +71,7 @@ recoolor show catppuccin-mocha [gtk3|shell]       # print the generated CSS
 | **GTK3 apps** | Fully with **adw-gtk3 for GTK3 Apps** on (needs `adw-gtk3-theme`), which switches GTK3 to the libadwaita look. Without it, the common widgets are recolored directly. |
 | **Qt and KDE apps** | **Qt and KDE Apps** writes a KDE color scheme (`~/.config/kdeglobals`) for KDE apps and Qt Flatpaks such as Kdenlive. Other Qt apps use Qt's GTK3 theme on GNOME, so they follow the GTK3 colors. |
 | **Flatpak apps** | Through read-only access to the GTK settings folders. Recoolor adds it to your Flatpak overrides if it is not already there. |
-| **GNOME Shell** | The top bar, quick settings, calendar and overview, recolored from the installed Shell's own stylesheet. Needs the User Themes extension. Popups and cards take the palette's window and card colors. With Blur my Shell's "Preserve shell theme" they follow its blur: see-through as much as it makes them, solid when its popup blur is off (through Recoolor's Shell extension; log out and back in once). |
+| **GNOME Shell** | The top bar, quick settings, calendar and overview, recolored from the installed Shell's own stylesheet. Needs the User Themes extension. Popups and cards take the palette's window and card colors; the Alt+Tab switcher follows light and dark, and the volume OSD's bar takes the accent. With Blur my Shell's "Preserve shell theme" popups follow its blur: see-through as much as it makes them, solid when its popup blur is off. SearchLightNG follows the palette too. |
 | **Wallpaper** | A light and a dark wallpaper, optionally tinted to the palette: **Match Palette** keeps the image and moves its colors to the palette's, **Mono** makes a gradient map. |
 | **Lock screen** | An image of its own, sharp or blurred (GNOME otherwise shows the desktop wallpaper, blurred). |
 | **Icons and cursors** | Any installed theme. |
@@ -84,14 +86,15 @@ Apps with themes of their own, in the **Apps** group:
 | btop | A generated `recoolor.theme`, selected in `btop.conf` | Yes |
 | Text Editor | A style scheme for light and dark | Yes |
 | VS Code | A local Recoolor theme extension | Yes, after one Reload Window |
-| Firefox, Thunderbird | `userChrome.css` (needs `toolkit.legacyUserProfileCustomizations.stylesheets`) | Restart Now |
+| Firefox, Thunderbird | `userChrome.css` (needs `toolkit.legacyUserProfileCustomizations.stylesheets`, and their theme following the system) | Restart Now once; then light/dark switches live |
 | Chrome | Its GTK mode (Settings → Appearance → GTK) | Restart Now |
 | Spotifast | A Recoolor custom theme | Yes |
 | Slack | Shows the four colors to paste in its theme settings | Manual |
 
-The optional **Screen Fade** crossfades the screen while Apply runs. It and the lock
-screen image use a small Recoolor Shell extension; log out and back in once after
-first turning either on.
+The optional **Screen Fade** crossfades the screen when Apply runs and when you
+switch light/dark or the accent. It, the lock screen image and the Blur my Shell and
+SearchLightNG colors use a small Recoolor Shell extension; log out and back in once
+after it is first installed or updated.
 
 ## Your setup is safe
 

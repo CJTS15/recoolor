@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 — 2026-10-27
 
 - Alt+Tab: app and window titles take the palette's text color (they came out a
   stray warm white).

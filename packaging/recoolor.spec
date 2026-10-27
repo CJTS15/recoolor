@@ -4,7 +4,7 @@
 %global debug_package %{nil}
 
 Name:           recoolor
-Version:        1.2.0
+Version:        1.3.0
 Release:        1%{?dist}
 Summary:        Recolor GNOME and its apps with one palette
 License:        GPL-3.0-or-later
@@ -64,6 +64,9 @@ appstreamcli validate --no-net %{buildroot}%{_metainfodir}/%{app_id}.metainfo.xm
 %{_datadir}/icons/hicolor/symbolic/apps/%{app_id}-symbolic.svg
 
 %changelog
+* Tue Oct 27 2026 CJ Sabijon <cjsabijon@gmail.com> - 1.3.0-1
+- 179 palettes from Gogh with search; Alt+Tab titles and toasts in the palette.
+
 * Mon Oct 26 2026 CJ Sabijon <cjsabijon@gmail.com> - 1.2.0-1
 - Firefox and Thunderbird follow light/dark live; Shell popups follow Blur my Shell.
 
