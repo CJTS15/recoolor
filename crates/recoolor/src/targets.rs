@@ -392,6 +392,8 @@ fn set_shell(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resul
         popups.push('\n');
         popups.push_str(&recoolor_core::css::searchlight(palette, bms.as_deref()));
     }
+    popups.push('\n');
+    popups.push_str(&recoolor_core::css::switcher_labels(palette));
     let popups_changed = set_popups(dirs, &popups)?;
     let changed = popups_changed
         || std::fs::read_to_string(shell::css_path(&dirs.data)).ok() != Some(css.clone());

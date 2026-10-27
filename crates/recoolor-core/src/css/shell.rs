@@ -31,6 +31,19 @@ pub fn shell(palette: &Palette, default_css: &str) -> String {
         + &recolor(palette, pristine(default_css))
         + &osd_level(palette)
         + &light_switcher(palette)
+        + &switcher_labels(palette)
+        + "\n"
+}
+
+/// The Alt+Tab switcher's app and window titles in the palette's text. Inheriting
+/// it from the switcher item does not reach them (they came out a stray warm
+/// white), so they are set directly. Also in Recoolor's extension stylesheet,
+/// which outranks the theme.
+pub fn switcher_labels(palette: &Palette) -> String {
+    format!(
+        ".switcher-list .item-box StLabel {{ color: {} !important; }}",
+        palette.colors.text
+    )
 }
 
 /// GNOME keeps the Alt+Tab switcher dark in light style too; Recoolor makes it
@@ -534,7 +547,23 @@ mod tests {
         let switcher = ".bms-popup-surface-light .switcher-list { background: rgba(255, 255, 255, 0.65) !important; }";
         assert!(shell_popups(&latte, switcher).contains("rgba(239, 241, 245, 0.65)"));
         // Dark style keeps GNOME's own.
-        assert!(!shell(&palette("catppuccin-mocha"), "").contains(".switcher-list"));
+        assert!(!shell(&palette("catppuccin-mocha"), "").contains(".switcher-list {"));
+    }
+
+    #[test]
+    fn switcher_titles_take_the_palettes_text() {
+        for id in ["rose-pine-moon", "catppuccin-latte"] {
+            let p = palette(id);
+            let rule = switcher_labels(&p);
+            assert_eq!(
+                rule,
+                format!(
+                    ".switcher-list .item-box StLabel {{ color: {} !important; }}",
+                    p.colors.text
+                )
+            );
+            assert!(shell(&p, "").contains(&rule));
+        }
     }
 
     #[test]

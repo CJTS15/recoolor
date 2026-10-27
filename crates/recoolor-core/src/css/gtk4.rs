@@ -10,7 +10,7 @@
 use std::fmt::Write;
 
 use super::{PAIR_SEPARATOR, Roles, header};
-use crate::palette::Palette;
+use crate::palette::{Palette, Variant};
 
 pub fn gtk4(palette: &Palette) -> String {
     header(&palette.id) + &colors(palette) + PLAIN_GTK4
@@ -34,10 +34,12 @@ pub fn gtk4_pair(light: &Palette, dark: &Palette) -> String {
 /// `background` shorthand because the built-in theme draws them with a gradient,
 /// and only window title bars, since libadwaita's own header bars are often meant
 /// to be transparent (and a user stylesheet outranks libadwaita's regardless of
-/// specificity).
+/// specificity). libadwaita's toasts are a fixed grey bubble with white text in
+/// both styles, no named color involved, so they get Recoolor's own variables.
 const PLAIN_GTK4: &str = "
 window.background { background-color: var(--window-bg-color); color: var(--window-fg-color); }
 headerbar.titlebar { background: var(--headerbar-bg-color); color: var(--headerbar-fg-color); }
+toast { background: var(--recoolor-toast-bg-color); color: var(--recoolor-toast-fg-color); }
 ";
 
 /// libadwaita's named colors as `@define-color`, which adw-gtk3 reads in GTK3 too.
@@ -57,6 +59,15 @@ fn colors(palette: &Palette) -> String {
     for (name, value) in &colors {
         let _ = writeln!(css, "  --{}: {value};", name.replace('_', "-"));
     }
+    // A dark bubble in both styles, as GNOME's toasts are: the palette's text in
+    // light style, its surface (a step above the window) in dark style.
+    let c = &palette.colors;
+    let (toast_bg, toast_fg) = match palette.variant {
+        Variant::Light => (c.text, c.base),
+        Variant::Dark => (c.surface, c.text),
+    };
+    let _ = writeln!(css, "  --recoolor-toast-bg-color: {toast_bg};");
+    let _ = writeln!(css, "  --recoolor-toast-fg-color: {toast_fg};");
     css.push_str("}\n");
     css
 }
@@ -158,5 +169,9 @@ mod tests {
         assert!(light_part.contains("--window-bg-color: #eff1f5;"));
         assert!(dark_part.contains("--window-bg-color: #1e1e2e;"));
         assert!(!light_part.contains("#1e1e2e"));
+        // Toasts: a dark bubble in both, from each half's palette.
+        assert!(light_part.contains("--recoolor-toast-bg-color: #4c4f69;"));
+        assert!(dark_part.contains("--recoolor-toast-bg-color: #313244;"));
+        assert!(css.contains("toast { background: var(--recoolor-toast-bg-color);"));
     }
 }
