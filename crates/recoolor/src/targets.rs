@@ -916,6 +916,28 @@ pub fn finish_pending() {
     }
 }
 
+/// After an apply that themes the Shell: a note when the login screen still shows an
+/// older palette. GDM Settings copies Recoolor's theme into the system stylesheet only
+/// when it applies it, and only it can write there; either half of a pair counts.
+pub fn login_screen_hint(choice: Choice, extras: &Extras) -> Option<String> {
+    if !extras.shell {
+        return None;
+    }
+    let css = desktop::shell_stylesheet("gdm.css").ok()?;
+    let id = shell::copied_palette_id(&css)?;
+    if choice.to_vec().iter().any(|p| p.id == id) {
+        return None;
+    }
+    let (palettes, _) = palette::catalog(paths::user_palettes_dir().as_deref());
+    let name = palettes
+        .iter()
+        .find(|p| p.id == id)
+        .map_or(id, |p| p.name.as_str());
+    Some(format!(
+        "The login screen still shows {name}. To update it, apply the Recoolor theme again in GDM Settings."
+    ))
+}
+
 /// `recoolor watch`: keeps what Recoolor applied in step with GNOME. A light/dark switch
 /// rewrites everything for a pair; an accent change (Settings → Appearance)
 /// rewrites everything with the palette's matching color. Runs until killed.
