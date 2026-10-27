@@ -6,6 +6,9 @@
   stray warm white).
 - libadwaita toasts take the palette: a dark bubble in both styles, as GNOME
   draws them, instead of a fixed grey.
+- 179 more palettes, converted from Gogh's terminal themes and kept only where
+  they make a readable desktop, including 25 light/dark pairs. A search box
+  finds palettes by name in either style.
 
 ## 1.2.0 — 2026-10-26
 
