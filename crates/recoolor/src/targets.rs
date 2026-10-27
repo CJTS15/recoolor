@@ -935,6 +935,10 @@ pub fn watch(dirs: Dirs) -> Result<(), String> {
             log::info("recoolor watch: recoolor was updated, restarting");
             std::process::exit(1);
         }
+        // The change this makes runs the sync and the fade.
+        if light_shell_first(&dirs, settings) {
+            return;
+        }
         let now = (
             desktop::prefers_dark(settings),
             desktop::accent_choice(settings),
@@ -955,7 +959,12 @@ pub fn watch(dirs: Dirs) -> Result<(), String> {
     let sync = Rc::new(sync);
     for key in ["color-scheme", "accent-color"] {
         let sync = sync.clone();
-        settings.connect_changed(Some(key), move |s, _| sync(s));
+        // Recoolor's own writes (`prefer-light`) report a change at once, in the middle
+        // of a sync that holds the state lock; run each change after it instead.
+        settings.connect_changed(Some(key), move |s, _| {
+            let (sync, s) = (sync.clone(), s.clone());
+            glib::idle_add_local_once(move || sync(&s));
+        });
     }
     glib::MainLoop::new(None, false).run();
     Ok(())
@@ -963,6 +972,32 @@ pub fn watch(dirs: Dirs) -> Result<(), String> {
 
 /// Rewrites Recoolor's files for the current style and accent, for the GTK palette
 /// and every extra that is on.
+/// Quick Settings switches to light by writing `default`, which `set_light_shell`
+/// turns into `prefer-light` so the Shell goes light too. Doing that before anything
+/// else lets the Shell's own restyle happen under the still, not as it fades away.
+/// True if it rewrote `color-scheme`.
+fn light_shell_first(dirs: &Dirs, settings: &gio::Settings) -> bool {
+    if settings.string("color-scheme") != "default" || !current(dirs).shell {
+        return false;
+    }
+    let Ok(_lock) = state::lock(&dirs.state) else {
+        return false;
+    };
+    let path = state::path(&dirs.state);
+    let Ok(mut state) = State::load(&path) else {
+        return false;
+    };
+    if let Err(e) = set_light_shell(&mut state, true) {
+        log::error(&format!("recoolor watch: {e}"));
+        return false;
+    }
+    if let Err(e) = state.save(&path) {
+        log::error(&format!("recoolor watch: {e}"));
+    }
+    gio::Settings::sync();
+    true
+}
+
 fn sync(dirs: &Dirs, settings: &gio::Settings) -> Result<(), String> {
     let dark_now = desktop::prefers_dark(settings);
     let accent = desktop::accent_choice(settings);
