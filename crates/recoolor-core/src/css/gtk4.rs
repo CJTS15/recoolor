@@ -135,6 +135,19 @@ fn named_colors(palette: &Palette) -> Vec<(&'static str, String)> {
         ("card_shade_color", shade.clone()),
         ("thumbnail_bg_color", hex(c.surface)),
         ("thumbnail_fg_color", hex(c.text)),
+        // Toggle groups: the checked toggle stands out from a trough of the text at
+        // 10%, brighter in light style as Adwaita's white is, lighter in dark style.
+        (
+            "active_toggle_bg_color",
+            match palette.variant {
+                Variant::Light => hex(c.base),
+                Variant::Dark => c.text.alpha(0.2),
+            },
+        ),
+        ("active_toggle_fg_color", hex(c.text)),
+        // The tab overview (Epiphany, Text Editor) sits between window and sidebar.
+        ("overview_bg_color", hex(c.mantle)),
+        ("overview_fg_color", hex(c.text)),
         ("dialog_bg_color", hex(c.base)),
         ("dialog_fg_color", hex(c.text)),
         ("popover_bg_color", hex(c.surface)),
@@ -173,6 +186,30 @@ mod tests {
         assert!(!css.contains("--accent-color:") && !css.contains("--warning-color:"));
         let accent = mocha.colors.accent.standalone(true);
         assert!(css.contains(&format!("@define-color accent_color {accent};")));
+    }
+
+    /// Every color variable libadwaita 1.9 defines at the root.
+    const LIBADWAITA: &str = "accent-bg accent accent-fg active-toggle-bg active-toggle-fg \
+        card-bg card-fg card-shade destructive-bg destructive destructive-fg dialog-bg \
+        dialog-fg error-bg error error-fg headerbar-backdrop headerbar-bg headerbar-border \
+        headerbar-darker-shade headerbar-fg headerbar-shade overview-bg overview-fg popover-bg \
+        popover-fg popover-shade scrollbar-outline secondary-sidebar-backdrop \
+        secondary-sidebar-bg secondary-sidebar-border secondary-sidebar-fg \
+        secondary-sidebar-shade shade sidebar-backdrop sidebar-bg sidebar-border sidebar-fg \
+        sidebar-shade success-bg success success-fg thumbnail-bg thumbnail-fg view-bg view-fg \
+        warning-bg warning warning-fg window-bg window-fg";
+
+    #[test]
+    fn sets_every_libadwaita_color_it_does_not_derive() {
+        for p in bundled() {
+            let css = gtk4(&p);
+            for name in LIBADWAITA.split_whitespace() {
+                let derived =
+                    DERIVED.contains(&format!("{}_color", name.replace('-', "_")).as_str());
+                let set = css.contains(&format!("  --{name}-color: "));
+                assert_eq!(set, !derived, "{}: --{name}-color", p.id);
+            }
+        }
     }
 
     #[test]
