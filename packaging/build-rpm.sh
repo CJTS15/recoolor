@@ -12,6 +12,22 @@ if [[ "$version" != "$spec_version" ]]; then
     exit 1
 fi
 
+# Check the tools before vendoring, which takes a while.
+if ! command -v rpmbuild > /dev/null; then
+    echo "rpmbuild not found. Install it with: sudo dnf install rpm-build" >&2
+    exit 1
+fi
+missing=()
+while read -r dep; do
+    rpm -q --whatprovides "$dep" > /dev/null || missing+=("$dep")
+done < <(rpmspec -q --buildrequires packaging/recoolor.spec)
+if (( ${#missing[@]} )); then
+    echo "Missing build dependencies:" >&2
+    printf '  %s\n' "${missing[@]}" >&2
+    echo "Install them with: sudo dnf builddep packaging/recoolor.spec" >&2
+    exit 1
+fi
+
 top="$PWD/target/rpmbuild"
 stage="$PWD/target/vendor-stage"
 rm -rf "$top" "$stage"
