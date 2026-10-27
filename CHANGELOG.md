@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.4.0 — 2026-10-27
+
+Follows GNOME's design guidelines (HIG):
+
+- Readable text colors: links, accent labels, warnings, errors and destructive
+  buttons use libadwaita's own derived text colors instead of the raw fills,
+  at least 4.5:1 on the window. Gogh palettes are checked the same way.
+- Light palettes: row separators and card edges are visible, and cards,
+  boxed lists and popovers sit a step lighter than the window, as in GNOME.
+- Toggle groups and the tab overview take the palette.
+- High Contrast: the Shell keeps the palette and gets GNOME's high-contrast
+  borders and focus rings in its colors. Log out and back in once after
+  updating.
+
+Window:
+
+- Adapts to its size: one scrolling column with Apply in a bottom bar when
+  narrow (down to 360 px), four cards per line when maximized.
+- Apply moves to the top of the side pane, above the Preview; the header keeps
+  the title and a main menu. Reset asks first, and Apply shows a spinner.
+- The Light and Dark Style lists are searchable.
+- After Apply, a reminder when the login screen still shows an older palette.
+
+Screen Fade:
+
+- Switching to light from Quick Settings fades instead of jumping, and quick
+  switches fade too. A little faster: closer to GNOME's own transition.
+- Fixed: the watch service could hang on a switch to light.
+
 ## 1.3.0 — 2026-10-27
 
 - Alt+Tab: app and window titles take the palette's text color (they came out a

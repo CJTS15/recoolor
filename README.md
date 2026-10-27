@@ -1,6 +1,6 @@
 # Recoolor
 
-Recolor your whole GNOME desktop from one palette. Pick Catppuccin, Dracula, Tokyo
+Recoolor your whole GNOME desktop from one palette. Pick Catppuccin, Dracula, Tokyo
 Night, Gruvbox, Rosé Pine or another of 200 bundled palettes, and Recoolor
 themes GTK and libadwaita apps, GNOME Shell, the wallpaper and lock screen, Qt
 apps, and apps with themes of their own such as Firefox, VS Code and the terminal.
@@ -37,12 +37,15 @@ Recoolor changed is put back, then `sudo dnf remove recoolor` or
 ## Using it
 
 Open **Recoolor**, pick a palette card to preview it on Recoolor's own window, turn
-on what else it should theme, and **Apply**. **Reset**, in Apply's dropdown, undoes
-all of it. The search box above the palettes finds one by name, in light or dark;
-**Show All** lists both styles. The heart menu has **About Recoolor**.
+on what else it should theme, and **Apply** (atop the side pane). **Reset**, in
+Apply's dropdown, undoes all of it after asking. The search box above the palettes
+finds one by name, in light or dark; **Show All** lists both styles. The main menu
+(☰) has **About Recoolor**. The window adapts: one column with Apply in a bottom bar
+when narrow, four cards per line when maximized.
 
 - **Light and dark:** turn on **Follow System Style** to use one palette in light
-  style and another in dark. Everything switches with GNOME's Dark Style toggle.
+  style and another in dark (both lists are searchable). Everything switches with
+  GNOME's Dark Style toggle.
 - **Accent color:** the Accent Color row picks among the palette's own colors:
   Blue gives the palette's blue, Pink its pink, and so on. It sets GNOME's accent
   too, so Settings → Appearance shows the same choice, and picking there works as
@@ -67,15 +70,15 @@ recoolor show catppuccin-mocha [gtk3|shell]       # print the generated CSS
 
 | | How |
 |---|---|
-| **libadwaita apps** (most GNOME apps) | Fully, through the named colors libadwaita draws everything from. Restart them to see a change; light/dark switches live. |
+| **libadwaita apps** (most GNOME apps) | Fully, through the named colors libadwaita draws everything from, used as libadwaita intends (see below). Restart them to see a change; light/dark switches live. |
 | **GTK3 apps** | Fully with **adw-gtk3 for GTK3 Apps** on (needs `adw-gtk3-theme`), which switches GTK3 to the libadwaita look. Without it, the common widgets are recolored directly. |
 | **Qt and KDE apps** | **Qt and KDE Apps** writes a KDE color scheme (`~/.config/kdeglobals`) for KDE apps and Qt Flatpaks such as Kdenlive. Other Qt apps use Qt's GTK3 theme on GNOME, so they follow the GTK3 colors. |
 | **Flatpak apps** | Through read-only access to the GTK settings folders. Recoolor adds it to your Flatpak overrides if it is not already there. |
-| **GNOME Shell** | The top bar, quick settings, calendar and overview, recolored from the installed Shell's own stylesheet. Needs the User Themes extension. Popups and cards take the palette's window and card colors; the Alt+Tab switcher follows light and dark, and the volume OSD's bar takes the accent. With Blur my Shell's "Preserve shell theme" popups follow its blur: see-through as much as it makes them, solid when its popup blur is off. SearchLightNG follows the palette too. |
+| **GNOME Shell** | The top bar, quick settings, calendar and overview, recolored from the installed Shell's own stylesheet. Needs the User Themes extension. Popups and cards take the palette's window and card colors; the Alt+Tab switcher follows light and dark, and the volume OSD's bar takes the accent. With Blur my Shell's "Preserve shell theme" popups follow its blur: see-through as much as it makes them, solid when its popup blur is off. SearchLightNG follows the palette too. With High Contrast on, the palette stays and GNOME's high-contrast borders and focus rings are drawn in its colors. |
 | **Wallpaper** | A light and a dark wallpaper, optionally tinted to the palette: **Match Palette** keeps the image and moves its colors to the palette's, **Mono** makes a gradient map. |
 | **Lock screen** | An image of its own, sharp or blurred (GNOME otherwise shows the desktop wallpaper, blurred). |
 | **Icons and cursors** | Any installed theme. |
-| **Login screen** | Through GDM Settings: **Set Up…** explains the one-time step. |
+| **Login screen** | Through GDM Settings: **Set Up…** explains the one-time step. GDM keeps a copy of the theme from when GDM Settings last applied it, so after a palette change Recoolor reminds you to apply it there again. |
 
 Apps with themes of their own, in the **Apps** group:
 
@@ -92,9 +95,22 @@ Apps with themes of their own, in the **Apps** group:
 | Slack | Shows the four colors to paste in its theme settings | Manual |
 
 The optional **Screen Fade** crossfades the screen when Apply runs and when you
-switch light/dark or the accent. It, the lock screen image and the Blur my Shell and
+switch light/dark or the accent, from Quick Settings or Settings, however quickly. It, the lock screen image and the Blur my Shell and
 SearchLightNG colors use a small Recoolor Shell extension; log out and back in once
 after it is first installed or updated.
+
+## Follows GNOME's design rules
+
+Recoolor uses libadwaita's colors for what they are meant for, so palettes read
+the way GNOME's [design guidelines](https://developer.gnome.org/hig/) expect:
+
+- Links, accent labels, warnings, errors and destructive buttons use the darker
+  (light style) or lighter (dark style) form libadwaita derives for text, at
+  least 4.5:1 on the window.
+- Row separators and card edges stay visible in light palettes, and cards sit a
+  step lighter than the window, as in GNOME.
+- Toggle groups and the tab overview take the palette, not stock white or grey.
+- High Contrast keeps its borders and focus rings, in GTK apps and the Shell.
 
 ## Your setup is safe
 
@@ -116,7 +132,8 @@ bundled palette replaces it.
 Besides Recoolor's own 21, 179 come from [Gogh](https://github.com/Gogh-Co/Gogh)'s
 terminal themes (MIT, see `palettes/gogh/LICENSE-MIT`), including 25 light/dark
 pairs. Only those that make a readable desktop are kept: text at 7:1, each color
-at 3:1 on windows, a clear accent, near-neutral windows that are neither pure
+at 3:1 on windows, the accent, red, green and yellow at 4.5:1 where libadwaita uses
+them as text, a clear accent, near-neutral windows that are neither pure
 black nor dim, and colors far enough apart to tell apart. `scripts/import-gogh.py`
 converts them from Gogh's `data/themes.json`; a test holds every one to those
 thresholds.
