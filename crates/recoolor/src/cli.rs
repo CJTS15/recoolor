@@ -156,6 +156,7 @@ fn apply(choice: Choice) -> Result<(), String> {
     let extras = targets::current(&dirs);
     let problems = targets::apply(&dirs, choice, &extras, desktop::system_prefers_dark())
         .map_err(|e| e.to_string())?;
+    targets::finish_pending();
     println!("Applied {}. Restart apps to see it.", choice.name());
     report(problems)
 }
