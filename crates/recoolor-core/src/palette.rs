@@ -119,80 +119,8 @@ struct RawColors {
     pink: Option<Color>,
 }
 
-const BUNDLED: &[(&str, &str)] = &[
-    (
-        "catppuccin-latte.toml",
-        include_str!("../palettes/catppuccin-latte.toml"),
-    ),
-    (
-        "catppuccin-frappe.toml",
-        include_str!("../palettes/catppuccin-frappe.toml"),
-    ),
-    (
-        "catppuccin-macchiato.toml",
-        include_str!("../palettes/catppuccin-macchiato.toml"),
-    ),
-    (
-        "catppuccin-mocha.toml",
-        include_str!("../palettes/catppuccin-mocha.toml"),
-    ),
-    ("dracula.toml", include_str!("../palettes/dracula.toml")),
-    (
-        "tokyo-night.toml",
-        include_str!("../palettes/tokyo-night.toml"),
-    ),
-    (
-        "tokyo-night-storm.toml",
-        include_str!("../palettes/tokyo-night-storm.toml"),
-    ),
-    (
-        "tokyo-night-moon.toml",
-        include_str!("../palettes/tokyo-night-moon.toml"),
-    ),
-    (
-        "tokyo-night-day.toml",
-        include_str!("../palettes/tokyo-night-day.toml"),
-    ),
-    (
-        "gruvbox-dark.toml",
-        include_str!("../palettes/gruvbox-dark.toml"),
-    ),
-    (
-        "gruvbox-light.toml",
-        include_str!("../palettes/gruvbox-light.toml"),
-    ),
-    ("rose-pine.toml", include_str!("../palettes/rose-pine.toml")),
-    (
-        "rose-pine-moon.toml",
-        include_str!("../palettes/rose-pine-moon.toml"),
-    ),
-    (
-        "rose-pine-dawn.toml",
-        include_str!("../palettes/rose-pine-dawn.toml"),
-    ),
-    (
-        "everforest-dark.toml",
-        include_str!("../palettes/everforest-dark.toml"),
-    ),
-    (
-        "everforest-light.toml",
-        include_str!("../palettes/everforest-light.toml"),
-    ),
-    ("nord.toml", include_str!("../palettes/nord.toml")),
-    ("one-dark.toml", include_str!("../palettes/one-dark.toml")),
-    (
-        "solarized-dark.toml",
-        include_str!("../palettes/solarized-dark.toml"),
-    ),
-    (
-        "solarized-light.toml",
-        include_str!("../palettes/solarized-light.toml"),
-    ),
-    (
-        "kanagawa-wave.toml",
-        include_str!("../palettes/kanagawa-wave.toml"),
-    ),
-];
+// Every `palettes/**/*.toml`, listed by build.rs.
+const BUNDLED: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/bundled_palettes.rs"));
 
 impl Palette {
     /// Parses a palette. `origin` names the source in error messages.
@@ -337,7 +265,14 @@ pub fn catalog(user_dir: Option<&Path>) -> (Vec<Palette>, Vec<PaletteError>) {
         }
     }
     let mut palettes: Vec<Palette> = by_id.into_values().collect();
-    palettes.sort_by(|a, b| (&a.family, &a.name).cmp(&(&b.family, &b.name)));
+    // Recoolor's own palettes first, then those converted from Gogh.
+    palettes.sort_by(|a, b| {
+        (a.id.starts_with("gogh-"), &a.family, &a.name).cmp(&(
+            b.id.starts_with("gogh-"),
+            &b.family,
+            &b.name,
+        ))
+    });
     (palettes, errors)
 }
 
@@ -360,6 +295,31 @@ mod tests {
         for (file, source) in BUNDLED {
             let p = Palette::from_toml(source, file).unwrap();
             assert_eq!(format!("{}.toml", p.id), *file);
+        }
+    }
+
+    #[test]
+    fn gogh_palettes_are_readable() {
+        // The thresholds scripts/import-gogh.py keeps them to, less rounding.
+        for p in bundled().into_iter().filter(|p| p.id.starts_with("gogh-")) {
+            let c = &p.colors;
+            assert!(c.text.contrast(c.base) >= 6.95, "{}: text", p.id);
+            assert!(c.subtext.contrast(c.base) >= 4.45, "{}: subtext", p.id);
+            for (name, hue) in [
+                ("red", c.red),
+                ("green", c.green),
+                ("yellow", c.yellow),
+                ("blue", c.blue),
+                ("purple", c.purple),
+                ("teal", c.teal),
+            ] {
+                assert!(hue.contrast(c.base) >= 2.95, "{}: {name} on base", p.id);
+                assert!(
+                    hue.contrast(c.surface) >= 2.45,
+                    "{}: {name} on surface",
+                    p.id
+                );
+            }
         }
     }
 

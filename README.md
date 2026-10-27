@@ -1,7 +1,7 @@
 # Recoolor
 
 Recolor your whole GNOME desktop from one palette. Pick Catppuccin, Dracula, Tokyo
-Night, Gruvbox, Rosé Pine or another of the 21 bundled palettes, and Recoolor
+Night, Gruvbox, Rosé Pine or another of 200 bundled palettes, and Recoolor
 themes GTK and libadwaita apps, GNOME Shell, the wallpaper and lock screen, Qt
 apps, and apps with themes of their own such as Firefox, VS Code and the terminal.
 One Reset puts everything back the way it was.
@@ -109,6 +109,14 @@ first turning either on.
 Each palette is a TOML file of colors by role (see `crates/recoolor-core/palettes`).
 Drop your own into `~/.local/share/recoolor/palettes/`; one with the same `id` as a
 bundled palette replaces it.
+
+Besides Recoolor's own 21, 179 come from [Gogh](https://github.com/Gogh-Co/Gogh)'s
+terminal themes (MIT, see `palettes/gogh/LICENSE-MIT`), including 25 light/dark
+pairs. Only those that make a readable desktop are kept: text at 7:1, each color
+at 3:1 on windows, a clear accent, near-neutral windows that are neither pure
+black nor dim, and colors far enough apart to tell apart. `scripts/import-gogh.py`
+converts them from Gogh's `data/themes.json`; a test holds every one to those
+thresholds.
 
 ## When something goes wrong
 

@@ -27,6 +27,7 @@ struct Window {
     title: adw::WindowTitle,
     grid: gtk::FlowBox,
     show_all: gtk::ToggleButton,
+    search: gtk::SearchEntry,
     cards: Vec<PaletteCard>,
     palettes: Vec<Palette>,
     /// Indices into `palettes` behind the light and dark combo rows.
@@ -78,8 +79,6 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     let show_all = gtk::ToggleButton::builder()
         .label("Show All")
         .tooltip_text("Show light and dark palettes")
-        .halign(gtk::Align::End)
-        .margin_top(12)
         .margin_end(12)
         .build();
     let menu = gtk::gio::Menu::new();
@@ -186,7 +185,16 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         .orientation(gtk::Orientation::Vertical)
         .hexpand(true)
         .build();
-    palette_column.append(&show_all);
+    let search = gtk::SearchEntry::builder()
+        .placeholder_text("Search palettes")
+        .hexpand(true)
+        .build();
+    // The search sits beside Show All, which keeps its own margins.
+    show_all.set_margin_start(6);
+    let tools = gtk::Box::builder().margin_start(12).margin_top(12).build();
+    tools.append(&search);
+    tools.append(&show_all);
+    palette_column.append(&tools);
     palette_column.append(
         &gtk::ScrolledWindow::builder()
             .child(&grid)
@@ -274,6 +282,7 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         title,
         grid: grid.clone(),
         show_all: show_all.clone(),
+        search: search.clone(),
         cards,
         palettes,
         light,
@@ -308,6 +317,8 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     grid.set_filter_func(move |child| w.matches_filter(child));
     let w = win.clone();
     show_all.connect_toggled(move |_| w.grid.invalidate_filter());
+    let w = win.clone();
+    search.connect_search_changed(move |_| w.grid.invalidate_filter());
     let w = win.clone();
     win.style
         .connect_dark_notify(move |_| w.grid.invalidate_filter());
@@ -392,18 +403,29 @@ impl Window {
         }
     }
 
+    /// The selected card always; while searching, palettes of either style whose
+    /// name or family matches; otherwise this style's, or all with Show All.
     fn matches_filter(&self, child: &gtk::FlowBoxChild) -> bool {
+        let Some(p) = usize::try_from(child.index())
+            .ok()
+            .and_then(|i| self.palettes.get(i))
+        else {
+            return false;
+        };
+        let query = self.search.text().trim().to_lowercase();
+        if child.is_selected() {
+            return true;
+        }
+        if !query.is_empty() {
+            return p.name.to_lowercase().contains(&query)
+                || p.family.to_lowercase().contains(&query);
+        }
         let current = if self.style.is_dark() {
             Variant::Dark
         } else {
             Variant::Light
         };
-        self.show_all.is_active()
-            || child.is_selected()
-            || usize::try_from(child.index())
-                .ok()
-                .and_then(|i| self.palettes.get(i))
-                .is_some_and(|p| p.variant == current)
+        self.show_all.is_active() || p.variant == current
     }
 
     fn on_card_selected(&self) {

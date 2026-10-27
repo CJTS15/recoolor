@@ -33,8 +33,17 @@ impl PaletteCard {
             .ellipsize(pango::EllipsizeMode::End)
             .css_classes(["heading"])
             .build();
+        // Converted Gogh themes say so; a lone one's family is its own name.
+        let caption = match (
+            palette.id.starts_with("gogh-"),
+            palette.family == palette.name,
+        ) {
+            (false, _) => palette.family.clone(),
+            (true, true) => "Gogh".to_owned(),
+            (true, false) => format!("{} · Gogh", palette.family),
+        };
         let family = gtk::Label::builder()
-            .label(&palette.family)
+            .label(&caption)
             .xalign(0.0)
             .css_classes(["caption", "dim-label"])
             .build();
