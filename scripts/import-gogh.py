@@ -32,6 +32,7 @@ MIN_SUBTEXT = 4.5    # secondary text
 MIN_HUE = 3.0        # each hue on the window (UI icons and large text)
 MIN_HUE_CARD = 2.5   # each hue on cards
 MIN_ACCENT_FG = 4.5  # text on accent-coloured buttons
+MIN_ROLE_TEXT = 4.5  # accent, red, green and yellow as libadwaita shows them as text
 MAX_BG_CHROMA = 0.06 # windows stay near neutral
 DARK_BG = (0.16, 0.36) # OKLab lightness of dark windows: no pure black
 MIN_LIGHT_BG = 0.88    # light windows really light
@@ -110,6 +111,24 @@ def nudge(color, backgrounds, ratio, lighter, limit=MAX_NUDGE):
     return None
 
 
+def standalone(color, dark):
+    """libadwaita's text form of a fill: OKLab lightness at most 0.5 in light
+    style, at least 0.85 in dark (Color::standalone in Recoolor)."""
+    L, a, b = oklab(color)
+    return from_oklab((max(L, 0.85) if dark else min(L, 0.5), a, b))
+
+
+def readable_as_text(color, base, dark, limit):
+    """`color`, moved in lightness up to `limit` until its text form reads on the
+    window; None if it cannot."""
+    L, a, b = oklab(color)
+    for step in range(int(limit * 100) + 1):
+        candidate = from_oklab((L + (step if dark else -step) / 100, a, b))
+        if contrast(base, standalone(candidate, dark)) >= MIN_ROLE_TEXT:
+            return candidate
+    return None
+
+
 def chroma(c):
     _, a, b = oklab(c)
     return math.hypot(a, b)
@@ -180,6 +199,12 @@ def convert(theme, limit):
     if min(gaps) < MIN_HUE_GAP:
         return None, "hues too alike (%.0f degrees)" % min(gaps)
 
+    # Links, warnings and errors: libadwaita draws these hues as text.
+    for name in ("red", "green", "yellow"):
+        colors[name] = readable_as_text(colors[name], base, dark, limit)
+        if colors[name] is None:
+            return None, "%s as text" % name
+
     colors["orange"] = mix(colors["red"], colors["yellow"], 0.5)
     colors["pink"] = mix(colors["red"], colors["purple"], 0.5)
     colors["accent"] = colors["blue"]
@@ -189,6 +214,8 @@ def convert(theme, limit):
         accent_fg = best_foreground(colors["accent"], [colors["crust"], base, text])
         if contrast(colors["accent"], accent_fg) < MIN_ACCENT_FG:
             return None, "no readable accent"
+    if contrast(base, standalone(colors["accent"], dark)) < MIN_ROLE_TEXT:
+        return None, "accent as text"
     return {"variant": "dark" if dark else "light", "colors": colors}, None
 
 

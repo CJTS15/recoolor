@@ -108,16 +108,9 @@ mod tests {
         }
     }
 
-    /// Light palettes with a hue just under 4.5:1 (3.9 at worst) even in libadwaita's
-    /// darker form; their own colors are kept. Revisit with the Gogh importer.
-    const WEAK_TEXT: [&str; 6] = [
-        "gogh-farmhouse-light",
-        "gogh-novel",
-        "gogh-seoul256-light",
-        "gogh-seoulbones-light",
-        "gogh-tiwahu-light",
-        "tokyo-night-day",
-    ];
+    /// Recoolor's own palettes keep their upstream colors, even where a hue falls a
+    /// little under 4.5:1 as text. Gogh palettes are nudged by the importer instead.
+    const WEAK_TEXT: [&str; 1] = ["tokyo-night-day"];
 
     #[test]
     fn text_colors_are_readable_on_the_window() {
@@ -137,6 +130,40 @@ mod tests {
                 }
             }
         }
+        assert!(weak.is_empty(), "{weak:#?}");
+    }
+
+    /// Upstream colors kept in Recoolor's own palettes: a success or warning fill
+    /// just under 3:1 with its best label, or text under 4.5:1 on cards.
+    const WEAK_FILLS: [&str; 5] = [
+        "catppuccin-latte",
+        "everforest-light",
+        "solarized-dark",
+        "solarized-light",
+        "tokyo-night-day",
+    ];
+
+    #[test]
+    fn status_fills_and_cards_are_readable() {
+        let mut weak = Vec::new();
+        for p in bundled() {
+            let (c, r) = (&p.colors, Roles::new(&p));
+            for (role, fill, fg) in [
+                ("destructive", c.red, r.destructive_fg),
+                ("success", c.green, r.success_fg),
+                ("warning", c.yellow, r.warning_fg),
+            ] {
+                let ratio = fill.contrast(fg);
+                if ratio < 3.0 {
+                    weak.push(format!("{} {role} fill: {ratio:.2}", p.id));
+                }
+            }
+            let ratio = c.text.contrast(c.surface);
+            if ratio < 4.5 {
+                weak.push(format!("{} text on card: {ratio:.2}", p.id));
+            }
+        }
+        weak.retain(|w| !WEAK_FILLS.iter().any(|id| w.starts_with(&format!("{id} "))));
         assert!(weak.is_empty(), "{weak:#?}");
     }
 
