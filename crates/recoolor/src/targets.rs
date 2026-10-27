@@ -892,10 +892,10 @@ fn set_vscode(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resu
                 let _ = std::fs::write(&theme, contents);
             }
         });
-        PENDING
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(rewrite);
+        let mut pending = PENDING.lock().unwrap_or_else(|e| e.into_inner());
+        // The window and the watcher never call `finish_pending`; keep the list short.
+        pending.retain(|h| !h.is_finished());
+        pending.push(rewrite);
     }
     Ok(())
 }
