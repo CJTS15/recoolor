@@ -130,10 +130,10 @@ fn named_colors(palette: &Palette) -> Vec<(&'static str, String)> {
         ("secondary_sidebar_backdrop_color", hex(c.base)),
         ("secondary_sidebar_border_color", shade.clone()),
         ("secondary_sidebar_shade_color", shade.clone()),
-        ("card_bg_color", hex(c.surface)),
+        ("card_bg_color", hex(r.card)),
         ("card_fg_color", hex(c.text)),
         ("card_shade_color", shade.clone()),
-        ("thumbnail_bg_color", hex(c.surface)),
+        ("thumbnail_bg_color", hex(r.card)),
         ("thumbnail_fg_color", hex(c.text)),
         // Toggle groups: the checked toggle stands out from a trough of the text at
         // 10%, brighter in light style as Adwaita's white is, lighter in dark style.
@@ -150,7 +150,7 @@ fn named_colors(palette: &Palette) -> Vec<(&'static str, String)> {
         ("overview_fg_color", hex(c.text)),
         ("dialog_bg_color", hex(c.base)),
         ("dialog_fg_color", hex(c.text)),
-        ("popover_bg_color", hex(c.surface)),
+        ("popover_bg_color", hex(r.card)),
         ("popover_fg_color", hex(c.text)),
         ("popover_shade_color", shade.clone()),
         ("shade_color", shade),

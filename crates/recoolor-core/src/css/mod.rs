@@ -48,6 +48,11 @@ pub(crate) struct Roles {
     pub hover: Color,
     pub active: Color,
     pub border: Color,
+    /// Cards, boxed lists and popovers: a step lighter than the window in both
+    /// styles, as Adwaita's are (white on near-white in light style). A light
+    /// palette's `surface` is darker than its window, so light style lifts the
+    /// window toward white instead.
+    pub card: Color,
     /// Tint for drop shadows, separators and shading under header bars: dark in both
     /// styles, as Adwaita's is, since a light palette's `crust` is a pale grey that
     /// would not show.
@@ -70,6 +75,11 @@ impl Roles {
             hover: c.surface.mix(c.overlay, 0.25),
             active: c.surface.mix(c.overlay, 0.45),
             border: c.surface.mix(c.overlay, if dark { 0.2 } else { 0.5 }),
+            card: if dark {
+                c.surface
+            } else {
+                c.base.mix(Color::rgb(255, 255, 255), 0.6)
+            },
             shade: if dark { c.crust } else { c.text },
             shade_alpha: if dark { 0.36 } else { 0.10 },
         }
@@ -137,12 +147,11 @@ mod tests {
 
     /// Upstream colors kept in Recoolor's own palettes: a success or warning fill
     /// just under 3:1 with its best label, or text under 4.5:1 on cards.
-    const WEAK_FILLS: [&str; 5] = [
+    const WEAK_FILLS: [&str; 4] = [
         "catppuccin-latte",
         "everforest-light",
         "solarized-dark",
         "solarized-light",
-        "tokyo-night-day",
     ];
 
     #[test]
@@ -160,7 +169,7 @@ mod tests {
                     weak.push(format!("{} {role} fill: {ratio:.2}", p.id));
                 }
             }
-            let ratio = c.text.contrast(c.surface);
+            let ratio = c.text.contrast(r.card);
             if ratio < 4.5 {
                 weak.push(format!("{} text on card: {ratio:.2}", p.id));
             }
@@ -177,8 +186,8 @@ mod tests {
             .filter(|p| p.variant == Variant::Light)
         {
             let r = Roles::new(&p);
-            let separator = p.colors.surface.mix(r.shade, r.shade_alpha);
-            let ratio = separator.contrast(p.colors.surface);
+            let separator = r.card.mix(r.shade, r.shade_alpha);
+            let ratio = separator.contrast(r.card);
             if ratio < 1.1 {
                 faint.push(format!("{}: {ratio:.3}", p.id));
             }
