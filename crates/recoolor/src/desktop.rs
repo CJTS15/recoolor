@@ -297,6 +297,12 @@ pub fn screen_fade(method: &str) {
     if !running(shell_fade::BUS_NAME) {
         return;
     }
+    // GSettings writes leave asynchronously; fading before they land (the switch
+    // to light rewrites `color-scheme` to `prefer-light`) shows the Shell and apps
+    // restyling mid-fade.
+    if method == "Fade" {
+        gio::Settings::sync();
+    }
     if let Err(e) = session_call(
         shell_fade::BUS_NAME,
         shell_fade::OBJECT_PATH,
