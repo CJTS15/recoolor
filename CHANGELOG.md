@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Alt+Tab: app and window titles take the palette's text color (they came out a
+  stray warm white).
+- libadwaita toasts take the palette: a dark bubble in both styles, as GNOME
+  draws them, instead of a fixed grey.
+
 ## 1.2.0 — 2026-10-26
 
 - Firefox and Thunderbird follow light/dark live, without a restart, when
