@@ -17,13 +17,14 @@ pub fn build() -> gtk::Widget {
     rows.add(&row);
     rows.add(&adw::EntryRow::builder().title("Entry").build());
 
-    let buttons = gtk::Box::builder().spacing(6).homogeneous(true).build();
+    // Each as wide as its label, so the row still fits a narrow window.
+    let buttons = gtk::Box::builder().spacing(6).build();
     for (label, class) in [
         ("Suggested", "suggested-action"),
         ("Button", ""),
         ("Destructive", "destructive-action"),
     ] {
-        let button = gtk::Button::with_label(label);
+        let button = gtk::Button::builder().label(label).hexpand(true).build();
         if !class.is_empty() {
             button.add_css_class(class);
         }

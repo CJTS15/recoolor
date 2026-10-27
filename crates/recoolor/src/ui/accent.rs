@@ -42,8 +42,13 @@ impl AccentRow {
         let colors = Rc::new(RefCell::new(
             CHOICES.iter().map(|c| c.2).collect::<Vec<_>>(),
         ));
-        let row = gtk::Box::builder()
-            .spacing(4)
+        // One line when there is room, two lines of five in a narrow window.
+        let row = gtk::FlowBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .min_children_per_line(5)
+            .max_children_per_line(CHOICES.len() as u32)
+            .column_spacing(4)
+            .row_spacing(4)
             .halign(gtk::Align::Center)
             .build();
         let mut buttons: Vec<gtk::ToggleButton> = Vec::new();
@@ -95,6 +100,10 @@ impl AccentRow {
                 }
             });
             row.append(&button);
+            // Focus goes straight to the swatches, not their flow box wrappers.
+            if let Some(child) = button.parent() {
+                child.set_focusable(false);
+            }
             buttons.push(button);
         }
 
