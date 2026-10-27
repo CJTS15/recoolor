@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use super::{ansi, remove_owned, write_owned};
 use crate::apply::ApplyError;
-use crate::palette::Palette;
+use crate::palette::{Palette, Variant, bundled};
 
 /// The palette's id, which the profile's `palette` setting names.
 pub const PALETTE_ID: &str = "Recoolor";
@@ -21,18 +21,29 @@ pub fn path(data_home: &Path) -> PathBuf {
 
 /// Ptyxis's own palette (generated from Gogh) for what is on screen, if the
 /// palette names one. A pair needs both halves to name the same one, since Ptyxis
-/// switches a built-in palette's light and dark halves by itself.
-// ponytail: a single light palette naming a two-sided built-in (Gruvbox,
-// Everforest) shows the dark half while GNOME is dark; generate instead if that bites.
+/// switches a built-in palette's light and dark halves by itself. For the same
+/// reason a single palette only uses a one-sided built-in: naming Gruvbox, a light
+/// palette would show Gruvbox's dark half whenever GNOME is dark.
 pub fn builtin<'a>(now: &'a Palette, pair: Option<(&'a Palette, &'a Palette)>) -> Option<&'a str> {
     match pair {
-        None => now.apps.ptyxis.as_deref(),
+        None => now.apps.ptyxis.as_deref().filter(|name| !two_sided(name)),
         Some((light, dark)) => light
             .apps
             .ptyxis
             .as_deref()
             .filter(|name| dark.apps.ptyxis.as_deref() == Some(*name)),
     }
+}
+
+/// Whether Ptyxis's built-in `name` has light and dark halves, going by the bundled
+/// palettes that name it.
+fn two_sided(name: &str) -> bool {
+    let variants: Vec<Variant> = bundled()
+        .into_iter()
+        .filter(|p| p.apps.ptyxis.as_deref() == Some(name))
+        .map(|p| p.variant)
+        .collect();
+    variants.contains(&Variant::Light) && variants.contains(&Variant::Dark)
 }
 
 /// `now` fills the main section; a `pair` adds light and dark sections.
@@ -72,7 +83,6 @@ pub fn remove(data_home: &Path) -> Result<bool, ApplyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::bundled;
 
     #[test]
     fn single_and_pair_layouts() {
@@ -92,6 +102,10 @@ mod tests {
         assert_eq!(builtin(&mocha, Some((&latte, &mocha))), None);
         let (g_light, g_dark) = (p("gruvbox-light"), p("gruvbox-dark"));
         assert_eq!(builtin(&g_dark, Some((&g_light, &g_dark))), Some("Gruvbox"));
+        // Alone, either half of a two-sided built-in is generated instead.
+        assert_eq!(builtin(&g_light, None), None);
+        assert_eq!(builtin(&g_dark, None), None);
+        assert_eq!(builtin(&latte, None), Some("Catppuccin Latte"));
         assert_eq!(builtin(&p("one-dark"), None), None);
 
         let pair = render(&mocha, Some((&latte, &mocha)));
