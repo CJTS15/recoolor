@@ -56,7 +56,9 @@ fn colors(palette: &Palette) -> String {
     let mut css = define_colors(palette);
 
     css.push_str("\n:root {\n");
-    for (name, value) in &colors {
+    // libadwaita derives the text colors from the fills itself, also inside OSDs and
+    // toasts; setting them here would replace that with Recoolor's fixed values.
+    for (name, value) in colors.iter().filter(|(name, _)| !DERIVED.contains(name)) {
         let _ = writeln!(css, "  --{}: {value};", name.replace('_', "-"));
     }
     // A dark bubble in both styles, as GNOME's toasts are: the palette's text in
@@ -72,26 +74,37 @@ fn colors(palette: &Palette) -> String {
     css
 }
 
+/// The text colors libadwaita 1.6+ derives from their `*_bg_color` fills.
+const DERIVED: [&str; 5] = [
+    "accent_color",
+    "destructive_color",
+    "success_color",
+    "warning_color",
+    "error_color",
+];
+
 fn named_colors(palette: &Palette) -> Vec<(&'static str, String)> {
     let c = &palette.colors;
     let r = Roles::new(palette);
-    let shade = c.crust.alpha(r.shade_alpha);
+    let shade = r.shade.alpha(r.shade_alpha);
     let hex = |color: crate::color::Color| color.to_string();
+    // As libadwaita derives them, for releases and adw-gtk3 that read these names.
+    let text = |color: crate::color::Color| hex(color.standalone(palette.variant == Variant::Dark));
 
     vec![
-        ("accent_color", hex(c.accent)),
+        ("accent_color", text(c.accent)),
         ("accent_bg_color", hex(c.accent)),
         ("accent_fg_color", hex(r.accent_fg)),
-        ("destructive_color", hex(c.red)),
+        ("destructive_color", text(c.red)),
         ("destructive_bg_color", hex(c.red)),
         ("destructive_fg_color", hex(r.destructive_fg)),
-        ("success_color", hex(c.green)),
+        ("success_color", text(c.green)),
         ("success_bg_color", hex(c.green)),
         ("success_fg_color", hex(r.success_fg)),
-        ("warning_color", hex(c.yellow)),
+        ("warning_color", text(c.yellow)),
         ("warning_bg_color", hex(c.yellow)),
         ("warning_fg_color", hex(r.warning_fg)),
-        ("error_color", hex(c.red)),
+        ("error_color", text(c.red)),
         ("error_bg_color", hex(c.red)),
         ("error_fg_color", hex(r.destructive_fg)),
         ("window_bg_color", hex(c.base)),
@@ -105,7 +118,7 @@ fn named_colors(palette: &Palette) -> Vec<(&'static str, String)> {
         ("headerbar_shade_color", shade.clone()),
         (
             "headerbar_darker_shade_color",
-            c.crust.alpha(r.shade_alpha * 2.0),
+            r.shade.alpha(r.shade_alpha * 2.0),
         ),
         ("sidebar_bg_color", hex(c.mantle)),
         ("sidebar_fg_color", hex(c.text)),
@@ -156,6 +169,10 @@ mod tests {
         assert!(css.contains("  --window-bg-color: #1e1e2e;"));
         assert!(css.contains("@define-color accent_bg_color #cba6f7;"));
         assert!(css.contains("@define-color accent_fg_color #11111b;"));
+        // Text colors: libadwaita derives the variables; the names get the same value.
+        assert!(!css.contains("--accent-color:") && !css.contains("--warning-color:"));
+        let accent = mocha.colors.accent.standalone(true);
+        assert!(css.contains(&format!("@define-color accent_color {accent};")));
     }
 
     #[test]

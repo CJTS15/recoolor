@@ -24,13 +24,19 @@ pub fn gtk3_adw(palette: &Palette) -> String {
 pub fn gtk3(palette: &Palette) -> String {
     let c = &palette.colors;
     let r = Roles::new(palette);
-    let shade = c.crust.alpha(r.shade_alpha);
+    let shade = r.shade.alpha(r.shade_alpha);
     let selected_bg = c.accent;
     let selected_fg = r.accent_fg;
     let disabled_fg = c.text.mix(c.base, 0.5);
     let (base, mantle, crust, surface, text) = (c.base, c.mantle, c.crust, c.surface, c.text);
-    let (accent, subtext, overlay, red, green, yellow) =
-        (c.accent, c.subtext, c.overlay, c.red, c.green, c.yellow);
+    // GTK3 uses these three as text (warning and error labels, entries).
+    let dark = palette.variant == crate::palette::Variant::Dark;
+    let (warning, error, success) = (
+        c.yellow.standalone(dark),
+        c.red.standalone(dark),
+        c.green.standalone(dark),
+    );
+    let (accent, subtext, overlay, red, yellow) = (c.accent, c.subtext, c.overlay, c.red, c.yellow);
     let (hover, active, border) = (r.hover, r.active, r.border);
     let destructive_fg = r.destructive_fg;
     let accent_fg = r.accent_fg;
@@ -55,9 +61,9 @@ pub fn gtk3(palette: &Palette) -> String {
 @define-color insensitive_base_color {mantle};
 @define-color borders {border};
 @define-color unfocused_borders {border};
-@define-color warning_color {yellow};
-@define-color error_color {red};
-@define-color success_color {green};
+@define-color warning_color {warning};
+@define-color error_color {error};
+@define-color success_color {success};
 @define-color wm_title {text};
 @define-color wm_unfocused_title {subtext};
 @define-color wm_highlight transparent;

@@ -77,6 +77,16 @@ impl Color {
         oklab_from_rgb([self.r, self.g, self.b].map(|c| f32::from(c) / 255.0))
     }
 
+    /// libadwaita's "standalone" form of a fill color, for using it as text on the
+    /// window: OKLab lightness at most 0.5 in light style, at least 0.85 in dark
+    /// (its `--standalone-color-oklab`).
+    pub fn standalone(self, dark: bool) -> Color {
+        let [l, a, b] = self.to_oklab();
+        let l = if dark { l.max(0.85) } else { l.min(0.5) };
+        let [r, g, b] = rgb_from_oklab([l, a, b]).map(|v| (v * 255.0).round() as u8);
+        Color::rgb(r, g, b)
+    }
+
     /// Hue in degrees, or `None` for a grey (channels within 24 of each other).
     pub fn hue(self) -> Option<f32> {
         let (r, g, b) = (i32::from(self.r), i32::from(self.g), i32::from(self.b));
