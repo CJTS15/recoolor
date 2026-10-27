@@ -671,11 +671,16 @@ impl Window {
         self.run_busy(
             move || {
                 let choice = Choice::from_slice(&palettes);
-                targets::apply(&dirs, choice, &extras, dark_now)
+                let result = targets::apply(&dirs, choice, &extras, dark_now);
+                let hint = targets::login_screen_hint(choice, &extras);
+                (result, hint)
             },
-            move |w, result| match result {
+            move |w, (result, hint)| match result {
                 Ok(problems) => {
                     w.offer_restart(&name, restartable);
+                    if let Some(hint) = hint {
+                        w.toast(&hint);
+                    }
                     if !problems.is_empty() {
                         w.alert("Some parts were not applied", &problems.join("\n\n"));
                     }
