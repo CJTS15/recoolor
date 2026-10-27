@@ -394,6 +394,9 @@ fn set_shell(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resul
     }
     popups.push('\n');
     popups.push_str(&recoolor_core::css::switcher_labels(palette));
+    if let Ok(hc) = desktop::shell_stylesheet("gnome-shell-high-contrast.css") {
+        popups.push_str(&recoolor_core::css::shell_high_contrast(palette, &hc));
+    }
     let popups_changed = set_popups(dirs, &popups)?;
     let changed = popups_changed
         || std::fs::read_to_string(shell::css_path(&dirs.data)).ok() != Some(css.clone());

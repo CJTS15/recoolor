@@ -153,10 +153,14 @@ pub fn reload_shell_theme(settings: &gio::Settings) -> Result<(), String> {
 
 /// The installed Shell's own stylesheet for `variant`, from its gresource.
 pub fn shell_default_css(variant: Variant) -> Result<String, String> {
-    let file = match variant {
+    shell_stylesheet(match variant {
         Variant::Dark => "gnome-shell-dark.css",
         Variant::Light => "gnome-shell-light.css",
-    };
+    })
+}
+
+/// One of the installed Shell's stylesheets, from its gresource.
+pub fn shell_stylesheet(file: &str) -> Result<String, String> {
     glib::system_data_dirs()
         .iter()
         .filter_map(|dir| {

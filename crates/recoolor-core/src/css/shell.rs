@@ -261,6 +261,73 @@ pub fn searchlight(palette: &Palette, bms_css: Option<&str>) -> String {
 }
 
 /// `(selectors, body)` of each top-level rule; Blur my Shell's sheet has no nesting.
+/// GNOME's high-contrast Shell outlines popups, cards and controls and draws strong
+/// focus rings, but Recoolor's theme loads on top of it and replaces them. These
+/// rules redraw them in the palette (the text at 40%, the accent for focus) for the
+/// same selectors, under `recoolor-high-contrast`, which Recoolor's extension sets
+/// while High Contrast is on. `hc_css` is the Shell's `gnome-shell-high-contrast.css`.
+pub fn shell_high_contrast(palette: &Palette, hc_css: &str) -> String {
+    let c = &palette.colors;
+    let text = |alpha: &str| format!("rgba({}, {}, {}, {alpha})", c.text.r, c.text.g, c.text.b);
+    let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+    for (sels, body) in rules(hc_css) {
+        // The last of each wins, as in CSS: focus rules often follow an outline.
+        let last = |property: &str| {
+            body.split(';')
+                .rev()
+                .find_map(|d| d.trim().strip_prefix(property).map(str::trim))
+        };
+        let mut decls = Vec::new();
+        // Outlines and focus rings, not the 100px fills it uses for highlights.
+        if let Some(shadow) = last("box-shadow:")
+            && let Some((width, _)) = shadow
+                .strip_prefix("inset 0 0 0 ")
+                .and_then(|s| s.split_once("px "))
+            && matches!(width, "1" | "2")
+        {
+            let color = if shadow.contains("accent-color") {
+                c.accent.to_string()
+            } else {
+                text("0.4")
+            };
+            decls.push(format!(
+                "box-shadow: inset 0 0 0 {width}px {color} !important;"
+            ));
+        }
+        // Popups' own borders: white at some strength, which becomes the text.
+        for property in ["border:", "border-color:"] {
+            if let Some(value) = last(property)
+                && let Some((before, rest)) = value.split_once("rgba(255, 255, 255, ")
+                && let Some((alpha, after)) = rest.split_once(')')
+            {
+                decls.push(format!(
+                    "{property} {before}{}{after} !important;",
+                    text(alpha)
+                ));
+            }
+        }
+        for decl in decls {
+            let index = match groups.iter().position(|(d, _)| *d == decl) {
+                Some(i) => i,
+                None => {
+                    groups.push((decl, Vec::new()));
+                    groups.len() - 1
+                }
+            };
+            for sel in sels.split(',').map(str::trim) {
+                let sel = format!(".recoolor-high-contrast {sel}");
+                if !groups[index].1.contains(&sel) {
+                    groups[index].1.push(sel);
+                }
+            }
+        }
+    }
+    groups
+        .iter()
+        .map(|(decl, sels)| format!("{} {{ {decl} }}\n", sels.join(",\n")))
+        .collect()
+}
+
 fn rules(css: &str) -> impl Iterator<Item = (&str, &str)> {
     css.split('}').filter_map(|rule| {
         let (sels, body) = rule.split_once('{')?;
@@ -548,6 +615,36 @@ mod tests {
         assert!(shell_popups(&latte, switcher).contains("rgba(239, 241, 245, 0.65)"));
         // Dark style keeps GNOME's own.
         assert!(!shell(&palette("catppuccin-mocha"), "").contains(".switcher-list {"));
+    }
+
+    #[test]
+    fn high_contrast_outlines_take_the_palette() {
+        let latte = palette("catppuccin-latte");
+        // Shapes from gnome-shell-high-contrast.css.
+        let hc = "\
+.button, .icon-button {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4); }
+.button:focus {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  box-shadow: inset 0 0 0 2px st-transparentize(st-mix(-st-accent-color, #ffffff, 60%), 0.1) !important; }
+.popup-menu-content {
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 2px 4px 0 transparent; }
+.overview-tile:selected {
+  box-shadow: inset 0 0 0 100px rgba(255, 255, 255, 0.28); }
+";
+        let css = shell_high_contrast(&latte, hc);
+        let outline = "box-shadow: inset 0 0 0 1px rgba(76, 79, 105, 0.4) !important;";
+        assert!(css.contains(&format!(
+            ".recoolor-high-contrast .button,\n.recoolor-high-contrast .icon-button {{ {outline} }}"
+        )));
+        assert!(css.contains(
+            ".recoolor-high-contrast .button:focus { box-shadow: inset 0 0 0 2px #8839ef !important; }"
+        ));
+        assert!(css.contains(
+            ".recoolor-high-contrast .popup-menu-content { border: 1px solid rgba(76, 79, 105, 0.5) !important; }"
+        ));
+        assert!(!css.contains("overview-tile"));
     }
 
     #[test]

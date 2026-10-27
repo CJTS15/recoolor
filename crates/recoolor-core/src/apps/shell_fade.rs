@@ -179,6 +179,19 @@ export default class Recoolor extends Extension {
                     this._watchBlurMyShell();
             });
         this._watchBlurMyShell();
+
+        // High Contrast: Recoolor's theme loads over GNOME's high-contrast one, so
+        // Recoolor's stylesheet redraws its outlines and focus rings under this class.
+        this._highContrastChanged = St.Settings.get().connect('notify::high-contrast',
+            () => this._syncHighContrast());
+        this._syncHighContrast();
+    }
+
+    _syncHighContrast() {
+        if (St.Settings.get().high_contrast)
+            Main.uiGroup.add_style_class_name('recoolor-high-contrast');
+        else
+            Main.uiGroup.remove_style_class_name('recoolor-high-contrast');
     }
 
     _watchBlurMyShell() {
@@ -205,6 +218,8 @@ export default class Recoolor extends Extension {
         this._bmsChanged = 0;
         this._bmsPopup = null;
         Main.uiGroup.remove_style_class_name('recoolor-solid-popups');
+        St.Settings.get().disconnect(this._highContrastChanged);
+        Main.uiGroup.remove_style_class_name('recoolor-high-contrast');
         UnlockDialog.UnlockDialog.prototype._createBackground = this._originalCreateBackground;
         Gio.bus_unown_name(this._name);
         this._dbus.unexport();
