@@ -46,7 +46,12 @@ pub(crate) struct Roles {
     pub hover: Color,
     pub active: Color,
     pub border: Color,
-    /// Alpha for drop shadows and shading under header bars.
+    /// Tint for drop shadows, separators and shading under header bars: dark in both
+    /// styles, as Adwaita's is, since a light palette's `crust` is a pale grey that
+    /// would not show.
+    pub shade: Color,
+    /// Alpha for `shade`. 10% in light style: a palette's text is lighter than
+    /// Adwaita's near-black, which it draws at 7%.
     pub shade_alpha: f32,
 }
 
@@ -63,7 +68,8 @@ impl Roles {
             hover: c.surface.mix(c.overlay, 0.25),
             active: c.surface.mix(c.overlay, 0.45),
             border: c.surface.mix(c.overlay, if dark { 0.2 } else { 0.5 }),
-            shade_alpha: if dark { 0.36 } else { 0.07 },
+            shade: if dark { c.crust } else { c.text },
+            shade_alpha: if dark { 0.36 } else { 0.10 },
         }
     }
 }
@@ -71,7 +77,7 @@ impl Roles {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::bundled;
+    use crate::palette::{Variant, bundled};
 
     #[test]
     fn header_round_trips_palette_id() {
@@ -100,6 +106,55 @@ mod tests {
             let ratio = Roles::new(&p).accent_fg.contrast(p.colors.accent);
             assert!(ratio >= 3.0, "{}: accent fg contrast {ratio}", p.id);
         }
+    }
+
+    /// Light palettes with a hue just under 4.5:1 (3.9 at worst) even in libadwaita's
+    /// darker form; their own colors are kept. Revisit with the Gogh importer.
+    const WEAK_TEXT: [&str; 6] = [
+        "gogh-farmhouse-light",
+        "gogh-novel",
+        "gogh-seoul256-light",
+        "gogh-seoulbones-light",
+        "gogh-tiwahu-light",
+        "tokyo-night-day",
+    ];
+
+    #[test]
+    fn text_colors_are_readable_on_the_window() {
+        let mut weak = Vec::new();
+        for p in bundled() {
+            let c = &p.colors;
+            let dark = p.variant == Variant::Dark;
+            for (role, fill) in [
+                ("accent", c.accent),
+                ("red", c.red),
+                ("green", c.green),
+                ("yellow", c.yellow),
+            ] {
+                let ratio = fill.standalone(dark).contrast(c.base);
+                if ratio < 4.5 && !WEAK_TEXT.contains(&p.id.as_str()) {
+                    weak.push(format!("{} {role}: {ratio:.2}", p.id));
+                }
+            }
+        }
+        assert!(weak.is_empty(), "{weak:#?}");
+    }
+
+    #[test]
+    fn separators_show_in_light_palettes() {
+        let mut faint = Vec::new();
+        for p in bundled()
+            .into_iter()
+            .filter(|p| p.variant == Variant::Light)
+        {
+            let r = Roles::new(&p);
+            let separator = p.colors.surface.mix(r.shade, r.shade_alpha);
+            let ratio = separator.contrast(p.colors.surface);
+            if ratio < 1.1 {
+                faint.push(format!("{}: {ratio:.3}", p.id));
+            }
+        }
+        assert!(faint.is_empty(), "{faint:#?}");
     }
 
     #[test]
