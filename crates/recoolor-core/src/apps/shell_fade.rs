@@ -55,9 +55,10 @@ const IFACE = `<node>
   </interface>
 </node>`;
 
-const FADE_MS = 700;
+// Close to GNOME's own Dark Style transition (250 ms, then 500 ms).
+const FADE_MS = 500;
 // Lets apps finish redrawing under the still before it fades.
-const SETTLE_MS = 200;
+const SETTLE_MS = 100;
 const MAX_FREEZE_MS = 3000;
 
 function config() {
@@ -234,20 +235,25 @@ export default class Recoolor extends Extension {
     // Covers the screen with a still of itself, as the Shell's ScreenTransition does.
     Freeze() {
         const cover = this._cover;
-        if (!cover || cover.visible)
+        // Already frozen; but a switch during the last fade freezes again, from what
+        // is on screen now (the half-faded still included), so it does not jump.
+        if (!cover || (cover.visible && !cover.get_transition('opacity')))
             return;
         const rect = new Mtk.Rectangle({
             x: 0, y: 0, width: global.screen_width, height: global.screen_height,
         });
         const [, , , scale] = global.stage.get_capture_final_size(rect);
-        cover.content = global.stage.paint_to_content(rect, scale, null,
+        const still = global.stage.paint_to_content(rect, scale, null,
             Clutter.PaintFlag.NO_CURSORS);
+        cover.remove_all_transitions();
+        cover.content = still;
         cover.set_position(0, 0);
         cover.set_size(global.screen_width, global.screen_height);
         Main.uiGroup.set_child_above_sibling(cover, null);
-        cover.remove_all_transitions();
         cover.opacity = 255;
         cover.show();
+        if (this._timeout)
+            GLib.source_remove(this._timeout);
         this._timeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, MAX_FREEZE_MS, () => {
             this._timeout = 0;
             this.Fade();
@@ -269,7 +275,10 @@ export default class Recoolor extends Extension {
             duration: FADE_MS,
             delay: SETTLE_MS,
             mode: Clutter.AnimationMode.EASE_IN_OUT_CUBIC,
-            onStopped: () => {
+            // Not when Freeze cut it short: the cover stays up for the next switch.
+            onStopped: finished => {
+                if (!finished)
+                    return;
                 cover.hide();
                 cover.content = null;
             },
