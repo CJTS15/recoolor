@@ -19,7 +19,8 @@ if ! command -v rpmbuild > /dev/null; then
 fi
 missing=()
 while read -r dep; do
-    rpm -q --whatprovides "$dep" > /dev/null || missing+=("$dep")
+    # By name: rpm cannot query a version range; rpmbuild checks the versions.
+    rpm -q --whatprovides "${dep%% *}" > /dev/null || missing+=("$dep")
 done < <(rpmspec -q --buildrequires packaging/recoolor.spec)
 if (( ${#missing[@]} )); then
     echo "Missing build dependencies:" >&2
