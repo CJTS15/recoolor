@@ -818,36 +818,87 @@ impl Window {
         statuses
     }
 
-    /// The "Applied" toast, with Restart Now when any of `apps` is open.
-    fn offer_restart(self: &Rc<Self>, name: &str, apps: Vec<&'static restart::App>) {
-        let open: Vec<&'static restart::App> = apps
+    /// After Recoolor: apps read the colors when they start, so one dialog lists the
+    /// open ones to restart (the browsers, and every app the Shell extension sees),
+    /// or a toast when none is open.
+    fn offer_restart(self: &Rc<Self>, name: &str, browsers: Vec<&'static restart::App>) {
+        let browsers: Vec<&'static restart::App> = browsers
             .into_iter()
             .filter(|a| restart::is_running(a))
             .collect();
-        if open.is_empty() {
-            self.toast(&format!("Recoolored with {name}. Restart apps to see it."));
+        // Restored as they were, so checked; anything else could lose its state.
+        const CHECKED: [&str; 2] = ["org.gnome.Nautilus.desktop", "org.gnome.Settings.desktop"];
+        let own = [restart::FIREFOX, restart::THUNDERBIRD, restart::CHROME];
+        let others: Vec<(String, String)> = desktop::running_apps()
+            .into_iter()
+            .filter(|(id, _)| id != &format!("{}.desktop", super::APP_ID))
+            .filter(|(id, _)| !own.iter().any(|b| b.desktop.contains(&id.as_str())))
+            .collect();
+        if browsers.is_empty() && others.is_empty() {
+            self.toast(&format!("Recoolored with {name}."));
             return;
         }
-        let names = open
-            .iter()
-            .map(|a| a.name)
-            .collect::<Vec<_>>()
-            .join(" and ");
-        let text = format!("Recoolored with {name}. Restart {names} to see it.");
-        log::info(&text);
-        let toast = adw::Toast::builder()
-            .title(text)
-            .button_label("Restart Now")
-            .timeout(10)
+
+        let list = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .css_classes(["boxed-list"])
             .build();
+        let row = |title: &str, checked: bool| {
+            let check = gtk::CheckButton::builder().active(checked).build();
+            let row = adw::ActionRow::builder().title(title).build();
+            row.add_prefix(&check);
+            row.set_activatable_widget(Some(&check));
+            list.append(&row);
+            check
+        };
+        let browser_checks: Vec<_> = browsers
+            .iter()
+            .map(|app| (*app, row(app.name, true)))
+            .collect();
+        let other_checks: Vec<_> = others
+            .into_iter()
+            .map(|(id, title)| {
+                let check = row(&title, CHECKED.contains(&id.as_str()));
+                (id, check)
+            })
+            .collect();
+
+        let dialog = adw::AlertDialog::builder()
+            .heading("Restart Apps")
+            .body(format!(
+                "Recoolored with {name}. Open apps show the new colors after a restart. \
+                 Apps that save their session come back as they were; others open fresh."
+            ))
+            .extra_child(&list)
+            .build();
+        dialog.add_responses(&[("later", "_Later"), ("restart", "_Restart")]);
+        dialog.set_response_appearance("restart", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("restart"));
+        dialog.set_close_response("later");
         let w = self.clone();
-        toast.connect_button_clicked(move |_| {
-            let apps = open.clone();
+        dialog.connect_response(Some("restart"), move |_, _| {
+            let apps: Vec<&'static restart::App> = browser_checks
+                .iter()
+                .filter(|(_, c)| c.is_active())
+                .map(|(a, _)| *a)
+                .collect();
+            let ids: Vec<String> = other_checks
+                .iter()
+                .filter(|(_, c)| c.is_active())
+                .map(|(id, _)| id.clone())
+                .collect();
             w.run_busy(
                 move || {
-                    apps.iter()
+                    let mut problems: Vec<String> = apps
+                        .iter()
                         .filter_map(|app| restart::restart(app).err())
-                        .collect::<Vec<_>>()
+                        .collect();
+                    if !ids.is_empty()
+                        && let Err(e) = desktop::restart_apps(&ids)
+                    {
+                        problems.push(format!("cannot restart the other apps: {e}"));
+                    }
+                    problems
                 },
                 |w, problems| {
                     if problems.is_empty() {
@@ -858,7 +909,7 @@ impl Window {
                 },
             );
         });
-        self.toasts.add_toast(toast);
+        dialog.present(Some(&self.window));
     }
 
     fn toast(&self, text: &str) {

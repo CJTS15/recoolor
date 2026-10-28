@@ -52,6 +52,12 @@ const IFACE = `<node>
     <method name="Freeze"/>
     <method name="Fade"/>
     <method name="ReloadTheme"/>
+    <method name="RunningApps">
+      <arg type="a(ss)" direction="out" name="apps"/>
+    </method>
+    <method name="RestartApps">
+      <arg type="as" direction="in" name="ids"/>
+    </method>
   </interface>
 </node>`;
 
@@ -149,6 +155,8 @@ export default class Recoolor extends Extension {
             return createBackground.call(this, original, monitorIndex);
         };
 
+        this._restarts = new Set();
+        this._waits = new Set();
         this._cover = new Clutter.Actor({visible: false});
         Main.uiGroup.add_child(this._cover);
         this._timeout = 0;
@@ -220,6 +228,15 @@ export default class Recoolor extends Extension {
         this._bmsPopup = null;
         Main.uiGroup.remove_style_class_name('recoolor-solid-popups');
         St.Settings.get().disconnect(this._highContrastChanged);
+        for (const {app, changed, timeout} of this._restarts) {
+            app.disconnect(changed);
+            if (timeout)
+                GLib.source_remove(timeout);
+        }
+        this._restarts.clear();
+        for (const wait of this._waits)
+            GLib.source_remove(wait);
+        this._waits.clear();
         Main.uiGroup.remove_style_class_name('recoolor-high-contrast');
         UnlockDialog.UnlockDialog.prototype._createBackground = this._originalCreateBackground;
         Gio.bus_unown_name(this._name);
@@ -289,6 +306,71 @@ export default class Recoolor extends Extension {
     // User Themes name away and back loads the default theme in between.
     ReloadTheme() {
         Main.loadTheme();
+    }
+
+    // Opens a stopped app again. One that D-Bus starts (most GNOME and Flatpak apps)
+    // can still hold its bus name while it exits; activating it then reaches the old
+    // process and is lost, so wait (up to 5 s) until the name is free.
+    _openWhenGone(app, tries = 0) {
+        const name = app.get_id().replace(/\.desktop$/, '');
+        Gio.DBus.session.call('org.freedesktop.DBus', '/org/freedesktop/DBus',
+            'org.freedesktop.DBus', 'NameHasOwner', new GLib.Variant('(s)', [name]),
+            new GLib.VariantType('(b)'), Gio.DBusCallFlags.NONE, -1, null,
+            (bus, result) => {
+                let owned = false;
+                try {
+                    [owned] = bus.call_finish(result).deepUnpack();
+                } catch {}
+                if (!owned || tries >= 20) {
+                    app.activate();
+                    return;
+                }
+                const wait = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 250, () => {
+                    this._waits.delete(wait);
+                    this._openWhenGone(app, tries + 1);
+                    return GLib.SOURCE_REMOVE;
+                });
+                this._waits.add(wait);
+            });
+    }
+
+    // The apps with windows, as [desktop id, name], for Recoolor's restart dialog
+    // (GNOME Shell keeps its own list private).
+    RunningApps() {
+        return Shell.AppSystem.get_default().get_running()
+            .map(app => [app.get_id() ?? '', app.get_name() ?? ''])
+            .filter(([id]) => id);
+    }
+
+    // Quits each app the way the dash's Quit does (one with unsaved work asks), then
+    // opens it again once it has stopped; not if it still runs after 15 s.
+    RestartApps(ids) {
+        const system = Shell.AppSystem.get_default();
+        for (const id of ids) {
+            const app = system.lookup_app(id);
+            if (!app || app.state === Shell.AppState.STOPPED)
+                continue;
+            const pending = {app};
+            const done = () => {
+                app.disconnect(pending.changed);
+                GLib.source_remove(pending.timeout);
+                this._restarts.delete(pending);
+            };
+            pending.changed = app.connect('notify::state', () => {
+                if (app.state !== Shell.AppState.STOPPED)
+                    return;
+                done();
+                this._openWhenGone(app);
+            });
+            pending.timeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 15, () => {
+                pending.timeout = 0;
+                app.disconnect(pending.changed);
+                this._restarts.delete(pending);
+                return GLib.SOURCE_REMOVE;
+            });
+            this._restarts.add(pending);
+            app.request_quit();
+        }
     }
 }
 "#;

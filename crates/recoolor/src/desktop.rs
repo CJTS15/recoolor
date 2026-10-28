@@ -293,6 +293,38 @@ fn activate_action(name: &str, path: &str, action: &str) -> Result<(), String> {
 
 /// Asks Recoolor's Shell extension to `Freeze` or `Fade` the screen. Does nothing
 /// when the extension is not running; a failure only costs the animation.
+/// The running apps with windows, as (desktop id, name), from Recoolor's Shell
+/// extension; empty without it, since GNOME Shell keeps its own list private.
+pub fn running_apps() -> Vec<(String, String)> {
+    if !running(shell_fade::BUS_NAME) {
+        return Vec::new();
+    }
+    session_call(
+        shell_fade::BUS_NAME,
+        shell_fade::OBJECT_PATH,
+        shell_fade::BUS_NAME,
+        "RunningApps",
+        None,
+    )
+    .ok()
+    .and_then(|reply| reply.get::<(Vec<(String, String)>,)>())
+    .map(|(apps,)| apps)
+    .unwrap_or_default()
+}
+
+/// Restarts these apps (desktop ids) through Recoolor's Shell extension: each quits
+/// as from the dash, then opens again.
+pub fn restart_apps(ids: &[String]) -> Result<(), String> {
+    session_call(
+        shell_fade::BUS_NAME,
+        shell_fade::OBJECT_PATH,
+        shell_fade::BUS_NAME,
+        "RestartApps",
+        Some((ids.to_vec(),).to_variant()),
+    )
+    .map(|_| ())
+}
+
 pub fn screen_fade(method: &str) {
     if !running(shell_fade::BUS_NAME) {
         return;
