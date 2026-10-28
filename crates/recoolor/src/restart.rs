@@ -67,6 +67,7 @@ fn main_pids(app: &App) -> Vec<u32> {
         .filter_map(|e| e.ok()?.file_name().into_string().ok())
         .filter(|pid| pid.bytes().all(|b| b.is_ascii_digit()))
         .filter(|pid| comm(pid).as_deref() == Some(app.comm) && owner(pid) == me)
+        .filter(|pid| state(pid) != Some('Z'))
         .filter(|pid| {
             let stat = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
             // The parent pid is the second field after the parenthesised name.
@@ -85,9 +86,23 @@ fn main_pids(app: &App) -> Vec<u32> {
         .collect()
 }
 
-/// Whether `pid` is still that app's process (a pid can be reused once it exits).
+/// The process state letter from `/proc/<pid>/stat`: `Z` for one that exited but
+/// was not collected by its parent yet.
+fn state(pid: &str) -> Option<char> {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    stat.rsplit_once(')')?
+        .1
+        .split_whitespace()
+        .next()?
+        .chars()
+        .next()
+}
+
+/// Whether `pid` is still that app's running process: not exited, not reused, and
+/// not a zombie (exited, waiting for its parent).
 fn alive(app: &App, pid: u32) -> bool {
-    comm(&pid.to_string()).as_deref() == Some(app.comm)
+    let pid = pid.to_string();
+    comm(&pid).as_deref() == Some(app.comm) && state(&pid) != Some('Z')
 }
 
 pub fn is_running(app: &App) -> bool {
@@ -141,7 +156,7 @@ pub fn restart(app: &App) -> Result<(), String> {
             reopen_from_desktop(app)?;
             continue;
         };
-        Command::new(program)
+        let mut child = Command::new(program)
             .args(args)
             .env_clear()
             .envs(environ.iter().filter_map(|kv| kv.split_once('=')))
@@ -152,6 +167,9 @@ pub fn restart(app: &App) -> Result<(), String> {
             .process_group(0)
             .spawn()
             .map_err(|e| format!("cannot reopen {}: {e}", app.name))?;
+        // Collect it when it exits, or it stays a zombie Recoolor's next restart
+        // would wait for.
+        std::thread::spawn(move || drop(child.wait()));
     }
     match stuck {
         0 => Ok(()),
@@ -203,6 +221,31 @@ mod tests {
             child.wait().unwrap();
         }
         assert!(!alive(&sh, window.id()));
+    }
+
+    #[test]
+    fn an_exited_child_not_collected_yet_is_not_alive() {
+        let sh = App {
+            name: "sh",
+            comm: "sh",
+            desktop: &[],
+        };
+        let mut child = Command::new("sh")
+            .args(["-c", "sleep 30; true"])
+            .spawn()
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(alive(&sh, child.id()));
+        // Killed but not waited for: a zombie, still named sh in /proc.
+        Command::new("kill")
+            .args(["-TERM", &child.id().to_string()])
+            .status()
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        assert_eq!(comm(&child.id().to_string()).as_deref(), Some("sh"));
+        assert!(!alive(&sh, child.id()));
+        assert!(!main_pids(&sh).contains(&child.id()));
+        child.wait().unwrap();
     }
 
     #[test]
