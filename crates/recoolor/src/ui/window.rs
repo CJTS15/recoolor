@@ -36,9 +36,9 @@ struct Window {
     pair: adw::SwitchRow,
     light_row: adw::ComboRow,
     dark_row: adw::ComboRow,
-    /// Apply, with Reset in its dropdown: atop the side pane, and in a bottom bar
+    /// Recoolor (applies), with Reset in its dropdown, in the header bar.
     /// that only the narrow layout shows.
-    apply: [adw::SplitButton; 2],
+    apply: adw::SplitButton,
     apply_action: gtk::gio::SimpleAction,
     reset_action: gtk::gio::SimpleAction,
     /// Set while Apply or Reset runs on a worker thread.
@@ -70,15 +70,13 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     reset_action.set_enabled(dirs.is_some());
     let apply_menu = gtk::gio::Menu::new();
     apply_menu.append(Some("Reset…"), Some("win.reset"));
-    let apply = [(); 2].map(|_| {
-        adw::SplitButton::builder()
-            .label("Apply")
-            .action_name("win.apply")
-            .menu_model(&apply_menu)
-            .dropdown_tooltip("Reset: remove Recoolor's styles and bring back what you had before")
-            .css_classes(["suggested-action"])
-            .build()
-    });
+    let apply = adw::SplitButton::builder()
+        .label("Recoolor")
+        .action_name("win.apply")
+        .menu_model(&apply_menu)
+        .dropdown_tooltip("Reset: remove Recoolor's styles and bring back what you had before")
+        .css_classes(["suggested-action"])
+        .build();
     let show_all = gtk::ToggleButton::builder()
         .label("Show All")
         .tooltip_text("Show light and dark palettes")
@@ -94,6 +92,7 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         .build();
     let header = adw::HeaderBar::builder().title_widget(&title).build();
     header.pack_end(&main_menu);
+    header.pack_end(&apply);
 
     let no_config = adw::Banner::builder()
         .title(
@@ -186,7 +185,6 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     }
     let interface = desktop::interface_settings();
     let accent = interface.as_ref().and_then(AccentRow::new);
-    side.append(&apply[0]);
     side.append(&preview::build());
     side.append(&pair_group);
     if let Some(accent) = &accent {
@@ -237,21 +235,10 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     let toasts = adw::ToastOverlay::new();
     toasts.set_child(Some(&page));
 
-    let bottom = gtk::Box::builder()
-        .margin_top(6)
-        .margin_bottom(6)
-        .margin_start(12)
-        .margin_end(12)
-        .build();
-    apply[1].set_hexpand(true);
-    bottom.append(&apply[1]);
-
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.add_top_bar(&no_config);
     toolbar.add_top_bar(&broken);
-    toolbar.add_bottom_bar(&bottom);
-    toolbar.set_reveal_bottom_bars(false);
     toolbar.set_content(Some(&toasts));
 
     let window = adw::ApplicationWindow::builder()
@@ -265,8 +252,7 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         .build();
 
     // Narrow windows (phones, tiled halves): one scrolling column with one card per
-    // line, the side pane under the palettes, and Apply in a bottom bar so it stays
-    // in reach.
+    // line, and the side pane under the palettes.
     let narrow = adw::Breakpoint::new(
         adw::BreakpointCondition::parse("max-width: 720sp").expect("valid breakpoint"),
     );
@@ -295,8 +281,6 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     );
     narrow.add_setter(&grid, "min-children-per-line", Some(&1u32.to_value()));
     narrow.add_setter(&grid, "max-children-per-line", Some(&1u32.to_value()));
-    narrow.add_setter(&apply[0], "visible", Some(&false.to_value()));
-    narrow.add_setter(&toolbar, "reveal-bottom-bars", Some(&true.to_value()));
     window.add_breakpoint(narrow);
 
     // Wide windows (maximized or fullscreen): four cards per line.
@@ -752,24 +736,20 @@ impl Window {
         }
         self.apply_action.set_enabled(false);
         self.reset_action.set_enabled(false);
-        for apply in &self.apply {
-            let busy = gtk::Box::builder()
-                .spacing(6)
-                .halign(gtk::Align::Center)
-                .build();
-            busy.append(&adw::Spinner::new());
-            busy.append(&gtk::Label::new(Some("Apply")));
-            apply.set_child(Some(&busy));
-        }
+        let busy = gtk::Box::builder()
+            .spacing(6)
+            .halign(gtk::Align::Center)
+            .build();
+        busy.append(&adw::Spinner::new());
+        busy.append(&gtk::Label::new(Some("Recoolor")));
+        self.apply.set_child(Some(&busy));
         let hold = self.window.application().map(|app| app.hold());
         let w = self.clone();
         gtk::glib::spawn_future_local(async move {
             let result = gtk::gio::spawn_blocking(work).await;
             drop(hold);
             w.busy.set(false);
-            for apply in &w.apply {
-                apply.set_label("Apply");
-            }
+            w.apply.set_label("Recoolor");
             w.reset_action.set_enabled(w.dirs.is_some());
             match result {
                 Ok(value) => done(&w, value),
@@ -845,7 +825,7 @@ impl Window {
             .filter(|a| restart::is_running(a))
             .collect();
         if open.is_empty() {
-            self.toast(&format!("Applied {name}. Restart apps to see it."));
+            self.toast(&format!("Recoolored with {name}. Restart apps to see it."));
             return;
         }
         let names = open
@@ -853,7 +833,7 @@ impl Window {
             .map(|a| a.name)
             .collect::<Vec<_>>()
             .join(" and ");
-        let text = format!("Applied {name}. Restart {names} to see it.");
+        let text = format!("Recoolored with {name}. Restart {names} to see it.");
         log::info(&text);
         let toast = adw::Toast::builder()
             .title(text)

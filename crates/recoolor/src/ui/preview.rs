@@ -1,9 +1,11 @@
-//! Sample widgets, so a palette shows on more than the grid. They do nothing.
+//! Sample widgets, so a palette shows on more than the grid. They do nothing. They sit
+//! in a "Preview" group, collapsed until its header button opens it, so they don't
+//! push the settings down.
 
 use adw::prelude::*;
 
 pub fn build() -> gtk::Widget {
-    let rows = adw::PreferencesGroup::builder().title("Preview").build();
+    let rows = adw::PreferencesGroup::new();
     let row = adw::ActionRow::builder()
         .title("List row")
         .subtitle("With a subtitle")
@@ -57,5 +59,33 @@ pub fn build() -> gtk::Widget {
     page.append(&progress);
     page.append(&card);
     page.append(&hint);
-    page.upcast()
+
+    // An accordion in the group's header, not an expander row: a row's padding
+    // would make the samples too wide for a narrow window.
+    let revealer = gtk::Revealer::builder().child(&page).build();
+    let toggle = gtk::ToggleButton::builder()
+        .icon_name("pan-down-symbolic")
+        .tooltip_text("Show Preview")
+        .valign(gtk::Align::Center)
+        .css_classes(["flat"])
+        .build();
+    toggle.update_property(&[gtk::accessible::Property::Label("Show Preview")]);
+    let shown = revealer.clone();
+    toggle.connect_toggled(move |toggle| {
+        let open = toggle.is_active();
+        shown.set_reveal_child(open);
+        toggle.set_icon_name(if open {
+            "pan-up-symbolic"
+        } else {
+            "pan-down-symbolic"
+        });
+        toggle.set_tooltip_text(Some(if open { "Hide Preview" } else { "Show Preview" }));
+    });
+    let group = adw::PreferencesGroup::builder()
+        .title("Preview")
+        .description("How GTK apps look with the selected palette")
+        .header_suffix(&toggle)
+        .build();
+    group.add(&revealer);
+    group.upcast()
 }
