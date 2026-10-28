@@ -2,7 +2,7 @@
 //! rows, in groups by kind (terminal, browsers, GNOME apps, Flatpak, custom themes,
 //! others). An app's row shows only while the app is installed, or while it is on.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::path::Path;
 use std::rc::Rc;
@@ -140,7 +140,7 @@ impl ExtrasRows {
         let fade = adw::SwitchRow::builder()
             .title("Screen Fade")
             .subtitle(
-                "Crossfade the screen on Apply, through a small Recoolor extension. After first turning it on, log out and back in once.",
+                "Crossfade the screen when you Recoolor, through a small Recoolor extension. After first turning it on, log out and back in once.",
             )
             .sensitive(dirs.is_some())
             .build();
@@ -554,7 +554,7 @@ fn show_gdm_setup(button: &gtk::Button, theme: Option<&std::path::Path>) {
     let dialog = adw::AlertDialog::new(
         Some("Login Screen"),
         Some(
-            "1. Turn on GNOME Shell above and Apply.\n\
+            "1. Turn on GNOME Shell above and click Recoolor.\n\
              2. GDM Settings lists only system themes, so run the copied command once in a terminal. It links Recoolor's theme into /usr/local/share/themes.\n\
              3. In GDM Settings, pick “Recoolor” as the shell theme.\n\n\
              GDM Settings copies the theme, so pick it again after changing palettes.",
@@ -587,14 +587,18 @@ fn show_gdm_setup(button: &gtk::Button, theme: Option<&std::path::Path>) {
     dialog.present(Some(button));
 }
 
-/// A wallpaper row: a thumbnail, Choose and Use Current, and a button to clear
-/// it. The choice takes effect on Apply, like the other rows.
+/// A wallpaper row on two lines: the title and file name, then a preview with
+/// Remove, Use Current and Choose…, so it fits a narrow window. The choice takes
+/// effect on Recoolor, like the other rows.
 #[derive(Clone)]
 struct WallpaperRow {
-    row: adw::ActionRow,
+    row: adw::PreferencesRow,
+    subtitle: gtk::Label,
     picture: gtk::Picture,
     clear: gtk::Button,
     unset: &'static str,
+    /// Counts thumbnail loads, so a slow one never replaces a newer choice.
+    loads: Rc<Cell<u32>>,
 }
 
 impl WallpaperRow {
@@ -607,38 +611,66 @@ impl WallpaperRow {
     ) -> Self {
         let picture = gtk::Picture::builder()
             .content_fit(gtk::ContentFit::Cover)
-            .width_request(64)
-            .height_request(40)
-            .valign(gtk::Align::Center)
+            .hexpand(true)
+            .height_request(90)
             .css_classes(["card"])
             .overflow(gtk::Overflow::Hidden)
             .build();
-        let clear = gtk::Button::builder()
-            .icon_name("edit-clear-symbolic")
-            .tooltip_text("Clear")
-            .valign(gtk::Align::Center)
-            .css_classes(["flat"])
-            .build();
-        let current = gtk::Button::builder()
-            .icon_name("view-refresh-symbolic")
-            .tooltip_text("Use the Current Wallpaper")
-            .valign(gtk::Align::Center)
-            .css_classes(["flat"])
-            .build();
+        let button = |icon: &str, tooltip: &str| {
+            let button = gtk::Button::builder()
+                .icon_name(icon)
+                .tooltip_text(tooltip)
+                .valign(gtk::Align::Center)
+                .css_classes(["flat"])
+                .build();
+            button.update_property(&[gtk::accessible::Property::Label(tooltip)]);
+            button
+        };
+        let clear = button("user-trash-symbolic", "Remove");
+        let current = button("view-refresh-symbolic", "Use the Current Wallpaper");
         let choose = gtk::Button::builder()
             .label("Choose…")
             .valign(gtk::Align::Center)
             .build();
-        let row = adw::ActionRow::builder().title(title).build();
-        row.add_suffix(&picture);
-        row.add_suffix(&clear);
-        row.add_suffix(&current);
-        row.add_suffix(&choose);
+
+        let heading = gtk::Label::builder()
+            .label(title)
+            .xalign(0.0)
+            .css_classes(["title"])
+            .build();
+        let subtitle = gtk::Label::builder()
+            .xalign(0.0)
+            .ellipsize(gtk::pango::EllipsizeMode::Middle)
+            .css_classes(["subtitle"])
+            .build();
+        let controls = gtk::Box::builder().spacing(6).build();
+        controls.append(&picture);
+        controls.append(&clear);
+        controls.append(&current);
+        controls.append(&choose);
+        let content = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(6)
+            .margin_top(10)
+            .margin_bottom(10)
+            .margin_start(12)
+            .margin_end(12)
+            .build();
+        content.append(&heading);
+        content.append(&subtitle);
+        content.append(&controls);
+        let row = adw::PreferencesRow::builder()
+            .title(title)
+            .activatable(false)
+            .child(&content)
+            .build();
         let this = Self {
             row,
+            subtitle,
             picture,
             clear,
             unset,
+            loads: Rc::new(Cell::new(0)),
         };
 
         let pick = {
@@ -690,9 +722,59 @@ impl WallpaperRow {
         let name = path
             .and_then(|p| Path::new(p).file_name())
             .map(|n| n.to_string_lossy());
-        self.row.set_subtitle(name.as_deref().unwrap_or(self.unset));
-        self.picture.set_filename(path);
+        self.subtitle
+            .set_label(name.as_deref().unwrap_or(self.unset));
+        self.picture.set_paintable(None::<&gtk::gdk::Paintable>);
         self.picture.set_visible(path.is_some());
         self.clear.set_visible(path.is_some());
+        let Some(path) = path.map(str::to_owned) else {
+            return;
+        };
+        // gdk-pixbuf reads every format the system can (HEIC and AVIF through glycin),
+        // where GtkPicture's own loader shows HEIC as a missing image. Scaled, off the
+        // main thread: wallpapers are often tens of megapixels.
+        let load = self.loads.get() + 1;
+        self.loads.set(load);
+        let this = self.clone();
+        gtk::glib::spawn_future_local(async move {
+            // A Pixbuf cannot cross threads; its pixels can.
+            let thumbnail = gtk::gio::spawn_blocking(move || {
+                let p = gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(&path, 480, 270, true).ok()?;
+                let format = if p.has_alpha() {
+                    gtk::gdk::MemoryFormat::R8g8b8a8
+                } else {
+                    gtk::gdk::MemoryFormat::R8g8b8
+                };
+                Some((
+                    p.read_pixel_bytes(),
+                    p.width(),
+                    p.height(),
+                    p.rowstride(),
+                    format,
+                ))
+            })
+            .await
+            .ok()
+            .flatten();
+            if this.loads.get() != load {
+                return;
+            }
+            match thumbnail {
+                Some((bytes, width, height, stride, format)) => {
+                    let texture = gtk::gdk::MemoryTexture::new(
+                        width,
+                        height,
+                        format,
+                        &bytes,
+                        stride as usize,
+                    );
+                    this.picture.set_paintable(Some(&texture));
+                }
+                None => this.subtitle.set_label(&format!(
+                    "{} — cannot read this image",
+                    this.subtitle.label()
+                )),
+            }
+        });
     }
 }
