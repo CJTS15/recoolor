@@ -18,7 +18,7 @@ use super::palette_card::PaletteCard;
 use super::preview;
 use crate::desktop::{self, Dirs};
 use crate::targets::{self, Choice};
-use crate::{log, restart};
+use crate::{log, login_screen, restart};
 
 // The window lives as long as the app, so handlers hold it strongly.
 struct Window {
@@ -411,8 +411,14 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     window.connect_is_active_notify(move |window| {
         if window.is_active() {
             w.extras.refresh_installed();
+            w.refresh_login();
         }
     });
+    let update_login = gtk::gio::SimpleAction::new("update-login", None);
+    let w = win.clone();
+    update_login.connect_activate(move |_, _| w.update_login_screen());
+    window.add_action(&update_login);
+    win.refresh_login();
     let w = win.clone();
     apply_action.connect_activate(move |_, _| w.on_apply());
     let w = win.clone();
@@ -665,15 +671,23 @@ impl Window {
             move || {
                 let choice = Choice::from_slice(&palettes);
                 let result = targets::apply(&dirs, choice, &extras, dark_now);
-                let hint = targets::login_screen_hint(choice, &extras);
+                let hint = targets::login_screen_hint(&dirs, choice, &extras);
                 (result, hint)
             },
             move |w, (result, hint)| match result {
                 Ok(problems) => {
                     w.offer_restart(&name, restartable);
                     if let Some(hint) = hint {
-                        w.toast(&hint);
+                        log::info(&hint);
+                        let toast = adw::Toast::builder()
+                            .title(hint)
+                            .button_label("Update…")
+                            .action_name("win.update-login")
+                            .timeout(10)
+                            .build();
+                        w.toasts.add_toast(toast);
                     }
+                    w.refresh_login();
                     if !problems.is_empty() {
                         w.alert("Some parts were not applied", &problems.join("\n\n"));
                     }
@@ -718,8 +732,89 @@ impl Window {
                 w.grid.unselect_all();
                 w.pair.set_active(false);
                 w.set_preview(None);
+                // Only GDM Settings can undo what it wrote.
+                if let login_screen::Shows::Palette(_) = login_screen::shows() {
+                    let toast = adw::Toast::builder()
+                        .title("The login screen keeps Recoolor's colors until you reset it in GDM Settings.")
+                        .button_label("Open GDM Settings")
+                        .timeout(10)
+                        .build();
+                    toast.connect_button_clicked(|_| {
+                        if let Err(e) = login_screen::open() {
+                            log::error(&e);
+                        }
+                    });
+                    w.toasts.add_toast(toast);
+                }
+                w.refresh_login();
             },
         );
+    }
+
+    /// The Login Screen row's status: what the login screen shows now.
+    fn refresh_login(&self) {
+        let linked = login_screen::linked();
+        let status = match login_screen::shows() {
+            _ if !linked => "Set up once to use Recoolor's theme through GDM Settings".to_owned(),
+            login_screen::Shows::Palette(id) => {
+                format!("Shows {}", login_screen::palette_name(&id))
+            }
+            login_screen::Shows::Gnome => "Shows GNOME's own look".to_owned(),
+        };
+        self.extras.set_login_status(linked, &status);
+    }
+
+    /// Update…: hands GDM Settings Recoolor's theme, accent, icons and cursors, and
+    /// opens it, so only its Apply is left. Set Up… first when the theme is not linked.
+    fn update_login_screen(self: &Rc<Self>) {
+        let Some(dirs) = self.dirs.clone() else {
+            return;
+        };
+        if !login_screen::linked() {
+            let theme = dirs
+                .data
+                .join("themes")
+                .join(recoolor_core::shell::THEME_NAME);
+            super::extras::show_gdm_setup(&self.window, Some(&theme));
+            return;
+        }
+        let shown = match recoolor_core::shell::status(&dirs.data) {
+            Ok(CssState::Recoolor(id)) => login_screen::palette_name(&id),
+            _ => {
+                self.alert(
+                    "Login Screen",
+                    "Turn on GNOME Shell and click Recoolor first: the login screen takes Recoolor's Shell theme.",
+                );
+                return;
+            }
+        };
+        let prepared = if login_screen::running() {
+            // It would overwrite its settings file when it closes.
+            Err("GDM Settings is already open: pick “Recoolor” as its shell theme there".to_owned())
+        } else {
+            let extras = self.extras.get();
+            let accent = self.interface.as_ref().and_then(desktop::accent_choice);
+            desktop::home().and_then(|home| {
+                login_screen::prefill(
+                    &home,
+                    accent.as_deref(),
+                    extras.icons.as_deref(),
+                    extras.cursors.as_deref(),
+                )
+            })
+        };
+        if let Err(e) = targets::remember_login_screen(&dirs, true) {
+            log::error(&e);
+        }
+        match login_screen::open() {
+            Ok(()) => self.toast(&match prepared {
+                Ok(()) => format!(
+                    "In GDM Settings, press Apply. The login screen gets the palette on screen now: {shown}."
+                ),
+                Err(e) => format!("{e}, then press Apply."),
+            }),
+            Err(e) => self.alert("Login Screen", &e),
+        }
     }
 
     /// Runs `work` on a worker thread, since it waits on systemctl, D-Bus and

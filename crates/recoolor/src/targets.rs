@@ -24,7 +24,7 @@ use recoolor_core::{
 };
 
 use crate::desktop::{self, Dirs};
-use crate::log;
+use crate::{log, login_screen};
 
 #[derive(Clone, Copy)]
 pub enum Choice<'a> {
@@ -240,6 +240,9 @@ pub fn reset(dirs: &Dirs) -> (Vec<(Toolkit, RestoreOutcome)>, Vec<String>) {
         problems.push(e);
     }
     problems.extend(set_extras(dirs, &Extras::default(), None));
+    if let Err(e) = remember_login_screen(dirs, false) {
+        problems.push(e);
+    }
     log::info("reset");
     (outcomes, problems)
 }
@@ -979,26 +982,35 @@ pub fn finish_pending() {
     }
 }
 
-/// After an apply that themes the Shell: a note when the login screen still shows an
-/// older palette. GDM Settings copies Recoolor's theme into the system stylesheet only
-/// when it applies it, and only it can write there; either half of a pair counts.
-pub fn login_screen_hint(choice: Choice, extras: &Extras) -> Option<String> {
+/// After an apply that themes the Shell: a note when the login screen shows an older
+/// palette, or GNOME's own look again after Recoolor's theme went to GDM Settings (a
+/// GNOME update replaces the system stylesheet). Either half of a pair counts.
+pub fn login_screen_hint(dirs: &Dirs, choice: Choice, extras: &Extras) -> Option<String> {
     if !extras.shell {
         return None;
     }
-    let css = desktop::shell_stylesheet("gdm.css").ok()?;
-    let id = shell::copied_palette_id(&css)?;
-    if choice.to_vec().iter().any(|p| p.id == id) {
-        return None;
+    match login_screen::shows() {
+        login_screen::Shows::Palette(id) if choice.to_vec().iter().any(|p| p.id == id) => None,
+        login_screen::Shows::Palette(id) => Some(format!(
+            "The login screen still shows {}. Update it through GDM Settings.",
+            login_screen::palette_name(&id)
+        )),
+        login_screen::Shows::Gnome
+            if State::load(&state::path(&dirs.state)).is_ok_and(|s| s.login_screen) =>
+        {
+            Some("A GNOME update put back the login screen's own look. Update it through GDM Settings.".into())
+        }
+        login_screen::Shows::Gnome => None,
     }
-    let (palettes, _) = palette::catalog(paths::user_palettes_dir().as_deref());
-    let name = palettes
-        .iter()
-        .find(|p| p.id == id)
-        .map_or(id, |p| p.name.as_str());
-    Some(format!(
-        "The login screen still shows {name}. To update it, apply the Recoolor theme again in GDM Settings."
-    ))
+}
+
+/// Records whether Recoolor's theme went to GDM Settings.
+pub fn remember_login_screen(dirs: &Dirs, sent: bool) -> Result<(), String> {
+    let _lock = state::lock(&dirs.state).map_err(|e| e.to_string())?;
+    let path = state::path(&dirs.state);
+    let mut state = State::load(&path).map_err(|e| e.to_string())?;
+    state.login_screen = sent;
+    state.save(&path).map_err(|e| e.to_string())
 }
 
 /// `recoolor watch`: keeps what Recoolor applied in step with GNOME. A light/dark switch

@@ -22,8 +22,6 @@ const TINTS: [(Tint, &str); 3] = [
 
 const UNSET: &str = "Not Set by Recoolor";
 
-const GDM_SETTINGS: &str = "io.github.realmazharhussain.GdmSettings.desktop";
-
 /// Tells from the installed launcher ids whether an app is installed.
 type Installed = Box<dyn Fn(&HashSet<String>) -> bool>;
 
@@ -50,6 +48,8 @@ fn launcher(ids: &'static [&'static str]) -> Installed {
 
 pub struct ExtrasRows {
     pub group: adw::PreferencesGroup,
+    gdm_row: adw::ActionRow,
+    gdm_button: gtk::Button,
     /// The app groups, in order; each hides while none of its apps is installed.
     apps: Vec<(adw::PreferencesGroup, Vec<AppRow>)>,
     /// Opens the Slack colors; the window knows the palette.
@@ -307,17 +307,13 @@ impl ExtrasRows {
             .build();
         slack_row.add_suffix(&slack);
 
-        let gdm_row = adw::ActionRow::builder()
-            .title("Login Screen")
-            .subtitle("Use Recoolor's Shell theme through GDM Settings")
-            .build();
-        let setup = gtk::Button::builder()
-            .label("Set Up…")
+        // The window fills in what the login screen shows and handles the button.
+        let gdm_row = adw::ActionRow::builder().title("Login Screen").build();
+        let gdm_button = gtk::Button::builder()
             .valign(gtk::Align::Center)
+            .action_name("win.update-login")
             .build();
-        let theme = dirs.map(|d| d.data.join("themes").join(recoolor_core::shell::THEME_NAME));
-        setup.connect_clicked(move |button| show_gdm_setup(button, theme.as_deref()));
-        gdm_row.add_suffix(&setup);
+        gdm_row.add_suffix(&gdm_button);
 
         let app = |row: &adw::SwitchRow, installed: Installed| AppRow {
             row: row.clone().upcast(),
@@ -353,7 +349,10 @@ impl ExtrasRows {
                 Some("Settings, Files and other GNOME apps follow the GTK styles"),
                 vec![
                     app(&text_editor, launcher(&["org.gnome.TextEditor.desktop"])),
-                    hint(&gdm_row, launcher(&[GDM_SETTINGS])),
+                    hint(
+                        &gdm_row,
+                        launcher(&["io.github.realmazharhussain.GdmSettings.desktop"]),
+                    ),
                 ],
             ),
             (
@@ -403,6 +402,8 @@ impl ExtrasRows {
 
         let this = Self {
             group,
+            gdm_row,
+            gdm_button,
             apps,
             slack,
             ptyxis,
@@ -434,6 +435,14 @@ impl ExtrasRows {
         };
         this.refresh_installed();
         this
+    }
+
+    /// The Login Screen row: what it shows, and Set Up… until Recoolor's theme is
+    /// where GDM Settings looks, then Update….
+    pub fn set_login_status(&self, linked: bool, status: &str) {
+        self.gdm_row.set_subtitle(status);
+        self.gdm_button
+            .set_label(if linked { "Update…" } else { "Set Up…" });
     }
 
     pub fn app_groups(&self) -> impl Iterator<Item = &adw::PreferencesGroup> {
@@ -548,10 +557,8 @@ impl ExtrasRows {
 }
 
 /// GDM Settings lists only system themes, so the steps start with a one-time link.
-fn show_gdm_setup(button: &gtk::Button, theme: Option<&std::path::Path>) {
-    let gdm_settings = gtk::gio::AppInfo::all()
-        .into_iter()
-        .find(|a| a.id().as_deref() == Some(GDM_SETTINGS));
+pub fn show_gdm_setup(parent: &impl IsA<gtk::Widget>, theme: Option<&std::path::Path>) {
+    let gdm_settings = crate::login_screen::app();
     let command = theme.map(|theme| {
         format!(
             "sudo mkdir -p /usr/local/share/themes && sudo ln -sfn '{}' /usr/local/share/themes/{}",
@@ -576,7 +583,7 @@ fn show_gdm_setup(button: &gtk::Button, theme: Option<&std::path::Path>) {
         dialog.add_response("open", "Open GDM Settings");
         dialog.set_response_appearance("open", adw::ResponseAppearance::Suggested);
     }
-    let clipboard = button.clipboard();
+    let clipboard = parent.clipboard();
     dialog.connect_response(None, move |_, response| match response {
         "copy" => {
             if let Some(command) = &command {
@@ -592,7 +599,7 @@ fn show_gdm_setup(button: &gtk::Button, theme: Option<&std::path::Path>) {
         }
         _ => {}
     });
-    dialog.present(Some(button));
+    dialog.present(Some(parent));
 }
 
 /// A wallpaper row on two lines: the title and file name, then a preview with
