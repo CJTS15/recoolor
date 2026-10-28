@@ -158,7 +158,7 @@ fn apply(choice: Choice) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     targets::finish_pending();
     println!("Applied {}. Restart apps to see it.", choice.name());
-    if let Some(hint) = targets::login_screen_hint(choice, &extras) {
+    if let Some(hint) = targets::login_screen_hint(&dirs, choice, &extras) {
         println!("{hint}");
     }
     report(problems)

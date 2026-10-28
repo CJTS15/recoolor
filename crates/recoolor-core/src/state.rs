@@ -38,6 +38,10 @@ pub struct State {
     /// always made from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ohmyposh_previous: Option<String>,
+    /// Recoolor's theme went to GDM Settings (Update…): a login screen back to GNOME's
+    /// own look then means a GNOME update replaced it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub login_screen: bool,
     /// btop's `color_theme`, `Default` when `btop.conf` had none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub btop_previous: Option<String>,
@@ -145,6 +149,7 @@ mod tests {
             ptyxis_previous: Some("Tokyo Night".into()),
             vscode_previous: Some(String::new()),
             btop_previous: Some("Default".into()),
+            login_screen: true,
             ohmyposh_previous: Some("$HOME/.config/ohmyposh/catppuccin.omp.json".into()),
             color_scheme_previous: Some("default".into()),
             background_previous: Some(Background {
