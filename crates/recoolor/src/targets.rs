@@ -393,8 +393,18 @@ fn set_shell(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resul
         .map(|bms| recoolor_core::css::shell_popups(palette, bms))
         .unwrap_or_default();
     if desktop::searchlight_installed(&dirs.data) {
-        popups.push('\n');
-        popups.push_str(&recoolor_core::css::searchlight(palette, bms.as_deref()));
+        // Its rules go by its widget names; after an update that renamed them, say so
+        // in the log instead of writing rules that match nothing.
+        if desktop::searchlight_code(&dirs.data)
+            .is_some_and(|js| recoolor_core::css::searchlight_names_known(&js))
+        {
+            popups.push('\n');
+            popups.push_str(&recoolor_core::css::searchlight(palette, bms.as_deref()));
+        } else {
+            log::error(
+                "SearchLightNG no longer names its widgets searchLight and searchLightBox, so Recoolor cannot color it",
+            );
+        }
     }
     popups.push('\n');
     popups.push_str(&recoolor_core::css::switcher_labels(palette));

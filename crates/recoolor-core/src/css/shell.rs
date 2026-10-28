@@ -225,6 +225,14 @@ fn background(body: &str) -> Option<(Color, f32)> {
     ))
 }
 
+/// Whether SearchLightNG's code (`extension.js`) still names its widgets as
+/// [`searchlight`]'s rules expect; an update renaming them would leave them unused.
+pub fn searchlight_names_known(js: &str) -> bool {
+    ["'searchLight'", "'searchLightBox'"]
+        .iter()
+        .all(|name| js.contains(name))
+}
+
 /// SearchLightNG, a search popup: with its blur synced to Blur my Shell it ignores
 /// its own background color and always uses white text. A palette tint behind its
 /// results, as see-through as Blur my Shell's popups are for the style, and the
@@ -260,7 +268,6 @@ pub fn searchlight(palette: &Palette, bms_css: Option<&str>) -> String {
     )
 }
 
-/// `(selectors, body)` of each top-level rule; Blur my Shell's sheet has no nesting.
 /// GNOME's high-contrast Shell outlines popups, cards and controls and draws strong
 /// focus rings, but Recoolor's theme loads on top of it and replaces them. These
 /// rules redraw them in the palette (the text at 40%, the accent for focus) for the
@@ -328,6 +335,7 @@ pub fn shell_high_contrast(palette: &Palette, hc_css: &str) -> String {
         .collect()
 }
 
+/// `(selectors, body)` of each top-level rule; Blur my Shell's sheet has no nesting.
 fn rules(css: &str) -> impl Iterator<Item = (&str, &str)> {
     css.split('}').filter_map(|rule| {
         let (sels, body) = rule.split_once('{')?;
@@ -615,6 +623,16 @@ mod tests {
         assert!(shell_popups(&latte, switcher).contains("rgba(239, 241, 245, 0.65)"));
         // Dark style keeps GNOME's own.
         assert!(!shell(&palette("catppuccin-mocha"), "").contains(".switcher-list {"));
+    }
+
+    #[test]
+    fn searchlight_names_are_checked() {
+        let js = "this._entry = new St.Entry({ name: 'searchLight' });\n\
+                  this._box = new St.BoxLayout({ name: 'searchLightBox' });";
+        assert!(searchlight_names_known(js));
+        assert!(!searchlight_names_known(
+            "new St.BoxLayout({ name: 'searchBox' })"
+        ));
     }
 
     #[test]
