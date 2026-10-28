@@ -98,6 +98,32 @@ fn state(pid: &str) -> Option<char> {
         .next()
 }
 
+/// How long `pid` has been running: its start time in `/proc/<pid>/stat` (field 22,
+/// in clock ticks, which Linux fixes at 100 a second for user space) against
+/// `/proc/uptime`.
+fn age(pid: u32) -> Option<Duration> {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    // Fields after the name start at the state, field 3; the start time is 22.
+    let start: f64 = stat
+        .rsplit_once(')')?
+        .1
+        .split_whitespace()
+        .nth(19)?
+        .parse()
+        .ok()?;
+    let uptime: f64 = fs::read_to_string("/proc/uptime")
+        .ok()?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()?;
+    Some(Duration::from_secs_f64((uptime - start / 100.0).max(0.0)))
+}
+
+/// Firefox counts a start as finished only a few seconds after its windows are
+/// back; quitting it sooner, three times running, makes it offer Troubleshoot Mode.
+const SETTLED: Duration = Duration::from_secs(10);
+
 /// Whether `pid` is still that app's running process: not exited, not reused, and
 /// not a zombie (exited, waiting for its parent).
 fn alive(app: &App, pid: u32) -> bool {
@@ -126,6 +152,12 @@ pub fn restart(app: &App) -> Result<(), String> {
     let pids = main_pids(app);
     if pids.is_empty() {
         return Ok(());
+    }
+    // Let a just-started instance finish starting first.
+    if let Some(youngest) = pids.iter().filter_map(|&pid| age(pid)).min()
+        && youngest < SETTLED
+    {
+        std::thread::sleep(SETTLED - youngest);
     }
     // Read before quitting: the files go with the process.
     let instances: Vec<(Vec<String>, Vec<String>)> = pids
@@ -221,6 +253,16 @@ mod tests {
             child.wait().unwrap();
         }
         assert!(!alive(&sh, window.id()));
+    }
+
+    #[test]
+    fn a_new_process_is_young() {
+        let mut child = Command::new("sleep").arg("5").spawn().unwrap();
+        let young = age(child.id()).unwrap();
+        assert!(young < Duration::from_secs(2), "{young:?}");
+        assert!(age(1).unwrap() > young);
+        child.kill().unwrap();
+        child.wait().unwrap();
     }
 
     #[test]
