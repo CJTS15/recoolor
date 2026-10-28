@@ -18,7 +18,7 @@ pub struct App {
     /// The main process's name in `/proc/<pid>/comm`.
     comm: &'static str,
     /// Desktop entries to reopen it with, the first one installed wins.
-    desktop: &'static [&'static str],
+    pub desktop: &'static [&'static str],
 }
 
 pub const FIREFOX: App = App {
