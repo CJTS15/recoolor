@@ -450,6 +450,18 @@ pub fn searchlight_installed(data_home: &Path) -> bool {
     extension_stylesheet(data_home, "search-light-ng@salix.host").is_some()
 }
 
+/// SearchLightNG's `extension.js`, to check the widget names Recoolor styles.
+pub fn searchlight_code(data_home: &Path) -> Option<String> {
+    std::iter::once(data_home.to_owned())
+        .chain(glib::system_data_dirs())
+        .find_map(|d| {
+            std::fs::read_to_string(
+                d.join("gnome-shell/extensions/search-light-ng@salix.host/extension.js"),
+            )
+            .ok()
+        })
+}
+
 fn extension_stylesheet(data_home: &Path, uuid: &str) -> Option<String> {
     std::iter::once(data_home.to_owned())
         .chain(glib::system_data_dirs())
