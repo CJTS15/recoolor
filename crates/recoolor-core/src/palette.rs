@@ -65,7 +65,8 @@ pub struct Palette {
 pub struct Apps {
     /// A Ptyxis built-in palette (generated from Gogh), by its id.
     pub ptyxis: Option<String>,
-    /// fish themes to try in order (`fish_config theme list`).
+    /// fish themes by name. No longer used, since Recoolor writes a fish theme with
+    /// light and dark halves; still accepted, so palette files that list them load.
     #[serde(default)]
     pub fish: Vec<String>,
 }

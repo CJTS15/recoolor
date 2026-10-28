@@ -7,6 +7,7 @@ pub mod firefox;
 pub mod fish;
 pub mod gtksourceview;
 pub mod kdeglobals;
+pub mod ohmyposh;
 pub mod ptyxis;
 pub mod shell_fade;
 pub mod slack;

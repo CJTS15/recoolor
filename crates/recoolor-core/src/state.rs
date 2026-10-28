@@ -33,6 +33,11 @@ pub struct State {
     /// the key was not in `settings.json`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vscode_previous: Option<String>,
+    /// The `--config` argument of `config.fish`'s oh-my-posh line before Recoolor
+    /// pointed it at `recoolor.omp.json`: the user's own config, which Recoolor's is
+    /// always made from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ohmyposh_previous: Option<String>,
     /// btop's `color_theme`, `Default` when `btop.conf` had none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub btop_previous: Option<String>,
@@ -140,6 +145,7 @@ mod tests {
             ptyxis_previous: Some("Tokyo Night".into()),
             vscode_previous: Some(String::new()),
             btop_previous: Some("Default".into()),
+            ohmyposh_previous: Some("$HOME/.config/ohmyposh/catppuccin.omp.json".into()),
             color_scheme_previous: Some("default".into()),
             background_previous: Some(Background {
                 picture_uri: "file:///usr/share/backgrounds/a.jxl".into(),

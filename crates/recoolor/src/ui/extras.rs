@@ -228,9 +228,17 @@ impl ExtrasRows {
             desktop::ptyxis_profile().is_some(),
             "Ptyxis is not installed",
         );
+        let ohmyposh = dirs.is_some_and(|d| {
+            std::fs::read_to_string(recoolor_core::apps::ohmyposh::config_fish(&d.config))
+                .is_ok_and(|text| recoolor_core::apps::ohmyposh::config_arg(&text).is_some())
+        });
         let fish = app_switch(
             "fish",
-            "Syntax colors for new shells",
+            if ohmyposh {
+                "A Recoolor theme and your oh-my-posh prompt in the palette, for new shells"
+            } else {
+                "A Recoolor theme, light and dark, for new shells"
+            },
             desktop::fish_installed(),
             "fish is not installed",
         );

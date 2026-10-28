@@ -10,7 +10,8 @@ use gtk::gio;
 use gtk::gio::prelude::*;
 use gtk::glib;
 use recoolor_core::apps::{
-    self, btop, firefox, fish, gtksourceview, kdeglobals, ptyxis, shell_fade, spotifast, vscode,
+    self, btop, firefox, fish, gtksourceview, kdeglobals, ohmyposh, ptyxis, shell_fade, spotifast,
+    vscode,
 };
 use recoolor_core::palette::{self, Palette};
 use recoolor_core::state::{self, State};
@@ -300,7 +301,7 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
             "Terminal",
             set_ptyxis(dirs, &mut state, when(extras.ptyxis)),
         ),
-        ("fish", set_fish(dirs, when(extras.fish).map(|l| l.now))),
+        ("fish", set_fish(dirs, &mut state, when(extras.fish))),
         (
             "btop",
             set_btop(dirs, &mut state, when(extras.btop).map(|l| l.now)),
@@ -623,12 +624,74 @@ fn set_ptyxis(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result<(), 
     desktop::set_string(&profile, "palette", ptyxis::PALETTE_ID)
 }
 
-fn set_fish(dirs: &Dirs, palette: Option<&Palette>) -> Result<(), String> {
-    match palette {
-        Some(p) => fish::write(&dirs.config, &fish::render(p, &desktop::fish_themes())),
-        None => fish::remove(&dirs.config).map(|_| ()),
+fn set_fish(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result<(), String> {
+    let err = |e: ApplyError| e.to_string();
+    let home = desktop::home()?;
+    let config_fish = ohmyposh::config_fish(&dirs.config);
+    let text = std::fs::read_to_string(&config_fish).unwrap_or_default();
+    let Some(look) = look else {
+        fish::remove(&dirs.config).map_err(err)?;
+        desktop::reload_fish(None);
+        // Point oh-my-posh back at the user's own config.
+        if let Some(previous) = state.ohmyposh_previous.clone() {
+            let ours = ohmyposh::expand(&ohmyposh::sibling_arg(&previous), &home);
+            let restored = ohmyposh::set_config_arg(&text, &previous);
+            if restored != text {
+                ohmyposh::write_config(&config_fish, &restored).map_err(err)?;
+            }
+            ohmyposh::remove(&ours).map_err(err)?;
+            state.ohmyposh_previous = None;
+        }
+        return Ok(());
+    };
+    let omp = set_ohmyposh(state, &text, &config_fish, &home, look);
+    let omp_path = omp.as_ref().ok().and_then(|p| p.as_deref());
+    fish::write(&dirs.config, look.now, look.pair, omp_path).map_err(err)?;
+    // Open shells take the new colors now, not only new ones.
+    desktop::reload_fish(Some(match look.now.variant {
+        Variant::Light => "light",
+        Variant::Dark => "dark",
+    }));
+    omp.map(|_| ())
+}
+
+/// With an oh-my-posh line in `config.fish`: writes `recoolor.omp.json` from the user's
+/// own config and points the line at it. Returns its path, or `None` without one.
+fn set_ohmyposh(
+    state: &mut State,
+    text: &str,
+    config_fish: &Path,
+    home: &Path,
+    look: Look,
+) -> Result<Option<PathBuf>, String> {
+    let err = |e: ApplyError| e.to_string();
+    let Some(arg) = ohmyposh::config_arg(text) else {
+        return Ok(None);
+    };
+    // Always from the user's own config, never Recoolor's copy, so colors cannot drift.
+    let original = if ohmyposh::expand(arg, home).ends_with(ohmyposh::FILE) {
+        state.ohmyposh_previous.clone().ok_or(
+            "oh-my-posh: config.fish points at recoolor.omp.json, but the original config is not recorded",
+        )?
+    } else {
+        arg.to_owned()
+    };
+    let source_path = ohmyposh::expand(&original, home);
+    let source = std::fs::read_to_string(&source_path)
+        .map_err(|e| format!("oh-my-posh: cannot read {}: {e}", source_path.display()))?;
+    let name = source_path
+        .file_name()
+        .map_or_else(|| original.clone(), |n| n.to_string_lossy().into_owned());
+    let json = ohmyposh::render(&source, &name, look.now, look.pair)
+        .map_err(|why| format!("oh-my-posh: {name}: {why}"))?;
+    let ours = source_path.with_file_name(ohmyposh::FILE);
+    ohmyposh::write(&ours, &json).map_err(err)?;
+    state.ohmyposh_previous = Some(original.clone());
+    let pointed = ohmyposh::set_config_arg(text, &ohmyposh::sibling_arg(&original));
+    if pointed != text {
+        ohmyposh::write_config(config_fish, &pointed).map_err(err)?;
     }
-    .map_err(|e| e.to_string())
+    Ok(Some(ours))
 }
 
 fn set_btop(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Result<(), String> {
