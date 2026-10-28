@@ -1,7 +1,9 @@
-//! The "Also Apply To" rows (Flatpak apps, GNOME Shell, icons and cursors) and the
-//! "Apps" rows (Ptyxis, fish, btop, VS Code, and hints for Slack and the login screen).
+//! The "Also Apply To" rows (GNOME Shell, wallpaper, icons and cursors) and the app
+//! rows, in groups by kind (terminal, browsers, GNOME apps, Flatpak, custom themes,
+//! others). An app's row shows only while the app is installed, or while it is on.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -20,9 +22,36 @@ const TINTS: [(Tint, &str); 3] = [
 
 const UNSET: &str = "Not Set by Recoolor";
 
+const GDM_SETTINGS: &str = "io.github.realmazharhussain.GdmSettings.desktop";
+
+/// Tells from the installed launcher ids whether an app is installed.
+type Installed = Box<dyn Fn(&HashSet<String>) -> bool>;
+
+/// A row in an app group, and how to tell whether its app is installed.
+struct AppRow {
+    row: gtk::Widget,
+    /// On rows stay visible, so what Recoolor turned on can be turned off.
+    switch: Option<adw::SwitchRow>,
+    installed: Installed,
+}
+
+/// Launcher ids installed now, from the system and Flatpak alike.
+fn installed_ids() -> HashSet<String> {
+    gtk::gio::AppInfo::all()
+        .into_iter()
+        .filter_map(|a| a.id().map(|id| id.to_string()))
+        .collect()
+}
+
+/// An app is installed when one of its launchers is.
+fn launcher(ids: &'static [&'static str]) -> Installed {
+    Box::new(move |installed| ids.iter().any(|id| installed.contains(*id)))
+}
+
 pub struct ExtrasRows {
     pub group: adw::PreferencesGroup,
-    pub apps_group: adw::PreferencesGroup,
+    /// The app groups, in order; each hides while none of its apps is installed.
+    apps: Vec<(adw::PreferencesGroup, Vec<AppRow>)>,
     /// Opens the Slack colors; the window knows the palette.
     pub slack: gtk::Button,
     ptyxis: adw::SwitchRow,
@@ -116,7 +145,6 @@ impl ExtrasRows {
             .sensitive(dirs.is_some())
             .build();
         group.add(&fade);
-        group.add(&flatpak);
         group.add(&shell);
         let adw_gtk3 = adw::SwitchRow::builder()
             .title("adw-gtk3 for GTK3 Apps")
@@ -283,27 +311,91 @@ impl ExtrasRows {
         setup.connect_clicked(move |button| show_gdm_setup(button, theme.as_deref()));
         gdm_row.add_suffix(&setup);
 
-        let apps_group = adw::PreferencesGroup::builder().title("Apps").build();
-        for row in [
-            &ptyxis,
-            &fish,
-            &btop,
-            &vscode,
-            &text_editor,
-            &firefox,
-            &thunderbird,
-            &kde,
-            &spotifast,
-        ] {
-            apps_group.add(row);
-        }
-        apps_group.add(&chrome_row);
-        apps_group.add(&slack_row);
-        apps_group.add(&gdm_row);
+        let app = |row: &adw::SwitchRow, installed: Installed| AppRow {
+            row: row.clone().upcast(),
+            switch: Some(row.clone()),
+            installed,
+        };
+        let hint = |row: &adw::ActionRow, installed: Installed| AppRow {
+            row: row.clone().upcast(),
+            switch: None,
+            installed,
+        };
+        let groups = [
+            (
+                "Terminal",
+                None,
+                vec![
+                    app(&ptyxis, launcher(&["org.gnome.Ptyxis.desktop"])),
+                    app(&fish, Box::new(|_| desktop::fish_installed())),
+                    app(&btop, launcher(&["btop.desktop"])),
+                ],
+            ),
+            (
+                "Browsers and Email",
+                None,
+                vec![
+                    app(&firefox, launcher(crate::restart::FIREFOX.desktop)),
+                    app(&thunderbird, launcher(crate::restart::THUNDERBIRD.desktop)),
+                    hint(&chrome_row, launcher(crate::restart::CHROME.desktop)),
+                ],
+            ),
+            (
+                "GNOME Apps",
+                Some("Settings, Files and other GNOME apps follow the GTK styles"),
+                vec![
+                    app(&text_editor, launcher(&["org.gnome.TextEditor.desktop"])),
+                    hint(&gdm_row, launcher(&[GDM_SETTINGS])),
+                ],
+            ),
+            (
+                "Flatpak Apps",
+                None,
+                vec![app(&flatpak, Box::new(|_| desktop::flatpak_installed()))],
+            ),
+            (
+                "Custom Themes",
+                Some("Apps whose own theme files Recoolor writes"),
+                vec![
+                    app(
+                        &vscode,
+                        launcher(&[
+                            "com.microsoft.VSCode.desktop",
+                            "code.desktop",
+                            "com.visualstudio.code.desktop",
+                        ]),
+                    ),
+                    app(&spotifast, launcher(&["rocks.spotifast.Spotifast.desktop"])),
+                    // Qt apps come from many places, often Flatpaks: always offered.
+                    app(&kde, Box::new(|_| true)),
+                ],
+            ),
+            (
+                "Other Apps",
+                None,
+                vec![hint(
+                    &slack_row,
+                    launcher(&["slack.desktop", "com.slack.Slack.desktop"]),
+                )],
+            ),
+        ];
+        let apps = groups
+            .into_iter()
+            .map(|(title, description, rows)| {
+                let group = adw::PreferencesGroup::builder()
+                    .title(title)
+                    .description(description.unwrap_or_default())
+                    .build();
+                for row in &rows {
+                    group.add(&row.row);
+                }
+                (group, rows)
+            })
+            .collect();
 
-        Self {
+        let this = Self {
             group,
-            apps_group,
+            apps,
             slack,
             ptyxis,
             fish,
@@ -331,6 +423,28 @@ impl ExtrasRows {
             lock_blur,
             icon_names: RefCell::new(icon_names),
             cursor_names: RefCell::new(cursor_names),
+        };
+        this.refresh_installed();
+        this
+    }
+
+    pub fn app_groups(&self) -> impl Iterator<Item = &adw::PreferencesGroup> {
+        self.apps.iter().map(|(group, _)| group)
+    }
+
+    /// Shows the rows of installed apps (and of those that are on), and the groups
+    /// with any row showing. Cheap; called again whenever the window comes back.
+    pub fn refresh_installed(&self) {
+        let ids = installed_ids();
+        for (group, rows) in &self.apps {
+            let mut any = false;
+            for row in rows {
+                let on = row.switch.as_ref().is_some_and(adw::SwitchRow::is_active);
+                let show = on || (row.installed)(&ids);
+                row.row.set_visible(show);
+                any |= show;
+            }
+            group.set_visible(any);
         }
     }
 
@@ -386,6 +500,7 @@ impl ExtrasRows {
         self.lock_blur.set_active(extras.lock_blur);
         select(&self.icons, &self.icon_names, &extras.icons);
         select(&self.cursors, &self.cursor_names, &extras.cursors);
+        self.refresh_installed();
     }
 
     pub fn get(&self) -> Extras {
@@ -428,7 +543,7 @@ impl ExtrasRows {
 fn show_gdm_setup(button: &gtk::Button, theme: Option<&std::path::Path>) {
     let gdm_settings = gtk::gio::AppInfo::all()
         .into_iter()
-        .find(|a| a.id().as_deref() == Some("io.github.realmazharhussain.GdmSettings.desktop"));
+        .find(|a| a.id().as_deref() == Some(GDM_SETTINGS));
     let command = theme.map(|theme| {
         format!(
             "sudo mkdir -p /usr/local/share/themes && sudo ln -sfn '{}' /usr/local/share/themes/{}",

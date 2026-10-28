@@ -193,7 +193,9 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         side.append(&accent.group);
     }
     side.append(&extras.group);
-    side.append(&extras.apps_group);
+    for group in extras.app_groups() {
+        side.append(group);
+    }
 
     let palette_column = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
@@ -420,6 +422,13 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     win.extras
         .slack
         .connect_clicked(move |_| w.show_slack_colors());
+    // An app installed or removed while Recoolor was in the background.
+    let w = win.clone();
+    window.connect_is_active_notify(move |window| {
+        if window.is_active() {
+            w.extras.refresh_installed();
+        }
+    });
     let w = win.clone();
     apply_action.connect_activate(move |_, _| w.on_apply());
     let w = win.clone();
