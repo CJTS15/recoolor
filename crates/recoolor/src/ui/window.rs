@@ -3,7 +3,8 @@
 //! Selecting a card previews it on Recoolor's own window, by loading the same GTK4 CSS
 //! that Apply would write into a display-wide provider.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -27,6 +28,9 @@ struct Window {
     title: adw::WindowTitle,
     grid: gtk::FlowBox,
     show_all: gtk::ToggleButton,
+    /// Shows only the starred palettes, in both styles.
+    favorites_only: gtk::ToggleButton,
+    favorites: RefCell<BTreeSet<String>>,
     search: gtk::SearchEntry,
     cards: Vec<PaletteCard>,
     palettes: Vec<Palette>,
@@ -203,10 +207,17 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         .placeholder_text("Search palettes")
         .hexpand(true)
         .build();
-    // The search sits beside Show All, which keeps its own margins.
+    let favorites_only = gtk::ToggleButton::builder()
+        .icon_name("starred-symbolic")
+        .tooltip_text("Show Favorites Only")
+        .margin_start(6)
+        .build();
+    favorites_only.update_property(&[gtk::accessible::Property::Label("Show Favorites Only")]);
+    // The search sits beside the toggles; Show All keeps its own margins.
     show_all.set_margin_start(6);
     let tools = gtk::Box::builder().margin_start(12).margin_top(12).build();
     tools.append(&search);
+    tools.append(&favorites_only);
     tools.append(&show_all);
     palette_column.append(&tools);
     let palette_scroll = gtk::ScrolledWindow::builder()
@@ -343,6 +354,12 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         title,
         grid: grid.clone(),
         show_all: show_all.clone(),
+        favorites_only: favorites_only.clone(),
+        favorites: RefCell::new(
+            recoolor_core::favorites::path()
+                .map(|p| recoolor_core::favorites::load(&p))
+                .unwrap_or_default(),
+        ),
         search: search.clone(),
         cards,
         palettes,
@@ -378,6 +395,16 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     grid.set_filter_func(move |child| w.matches_filter(child));
     let w = win.clone();
     show_all.connect_toggled(move |_| w.grid.invalidate_filter());
+    let w = win.clone();
+    favorites_only.connect_toggled(move |_| w.grid.invalidate_filter());
+    for (card, palette) in win.cards.iter().zip(&win.palettes) {
+        // Set before connecting, so loading them does not save them again.
+        card.star
+            .set_active(win.favorites.borrow().contains(&palette.id));
+        let (w, id) = (win.clone(), palette.id.clone());
+        card.star
+            .connect_toggled(move |star| w.set_favorite(&id, star.is_active()));
+    }
     let w = win.clone();
     search.connect_search_changed(move |_| w.grid.invalidate_filter());
     let w = win.clone();
@@ -490,6 +517,10 @@ impl Window {
         if child.is_selected() {
             return true;
         }
+        let favorite = self.favorites.borrow().contains(&p.id);
+        if self.favorites_only.is_active() && !favorite {
+            return false;
+        }
         if !query.is_empty() {
             return p.name.to_lowercase().contains(&query)
                 || p.family.to_lowercase().contains(&query);
@@ -499,7 +530,29 @@ impl Window {
         } else {
             Variant::Light
         };
-        self.show_all.is_active() || p.variant == current
+        // Starred on purpose, so favorites show in both styles.
+        self.favorites_only.is_active() || self.show_all.is_active() || p.variant == current
+    }
+
+    fn set_favorite(&self, id: &str, on: bool) {
+        let mut favorites = self.favorites.borrow_mut();
+        let changed = if on {
+            favorites.insert(id.to_owned())
+        } else {
+            favorites.remove(id)
+        };
+        if !changed {
+            return;
+        }
+        if let Some(path) = recoolor_core::favorites::path()
+            && let Err(e) = recoolor_core::favorites::save(&path, &favorites)
+        {
+            log::error(&format!("cannot save favorites: {e}"));
+        }
+        drop(favorites);
+        if self.favorites_only.is_active() {
+            self.grid.invalidate_filter();
+        }
     }
 
     fn on_card_selected(&self) {

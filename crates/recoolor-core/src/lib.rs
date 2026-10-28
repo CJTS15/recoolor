@@ -4,6 +4,7 @@ pub mod apply;
 pub mod apps;
 pub mod color;
 pub mod css;
+pub mod favorites;
 pub mod flatpak;
 pub mod palette;
 pub mod paths;
