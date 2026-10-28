@@ -7,7 +7,7 @@ use std::process::Command;
 use gtk::gio;
 use gtk::gio::prelude::*;
 use gtk::glib;
-use recoolor_core::apps::shell_fade;
+use recoolor_core::apps::{fish, shell_fade};
 use recoolor_core::{Palette, Variant, css, paths, service, shell};
 
 const INTERFACE_SCHEMA: &str = "org.gnome.desktop.interface";
@@ -325,6 +325,24 @@ pub fn restart_apps(ids: &[String]) -> Result<(), String> {
     .map(|_| ())
 }
 
+/// Tells every open fish shell to take Recoolor's colors again, in `style` (`light` or
+/// `dark`), or `None` to stop (Reset). fish shares universal variables with all its
+/// shells; the count makes each change a change.
+pub fn reload_fish(style: Option<&str>) {
+    let command = match style {
+        Some(style) => {
+            let count = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos());
+            format!("set --universal {} '{style} {count}'", fish::RELOAD)
+        }
+        None => format!("set --erase --universal {}", fish::RELOAD),
+    };
+    if let Err(e) = Command::new("fish").args(["-c", &command]).status() {
+        crate::log::error(&format!("cannot tell fish shells to recolor: {e}"));
+    }
+}
+
 pub fn screen_fade(method: &str) {
     if !running(shell_fade::BUS_NAME) {
         return;
@@ -383,22 +401,6 @@ pub fn ptyxis_profile() -> Option<gio::Settings> {
         &[],
         Some(&format!("/org/gnome/Ptyxis/Profiles/{uuid}/")),
     )
-}
-
-/// The themes fish can choose (`fish_config theme list`), or none without fish.
-pub fn fish_themes() -> Vec<String> {
-    Command::new("fish")
-        .args(["-c", "fish_config theme list"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 pub fn fish_installed() -> bool {
