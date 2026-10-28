@@ -52,8 +52,12 @@ fn owner(pid: &str) -> Option<u32> {
     fs::metadata(format!("/proc/{pid}")).ok().map(|m| m.uid())
 }
 
+/// Instances without windows that restart by themselves, such as Fedora's
+/// `firefox --dbus-service` for GNOME's search: quitting one gets it started again.
+const BACKGROUND: [&str; 2] = ["--dbus-service", "--headless"];
+
 /// The app's main processes: the user's own whose parent is not the app itself
-/// (its helpers are its children). One per running instance.
+/// (its helpers are its children), and not a background instance. One per window.
 fn main_pids(app: &App) -> Vec<u32> {
     let Ok(entries) = fs::read_dir("/proc") else {
         return Vec::new();
@@ -73,7 +77,17 @@ fn main_pids(app: &App) -> Vec<u32> {
             comm(parent).as_deref() != Some(app.comm)
         })
         .filter_map(|pid| pid.parse().ok())
+        .filter(|&pid| {
+            !proc_list(pid, "cmdline")
+                .iter()
+                .any(|arg| BACKGROUND.contains(&arg.as_str()))
+        })
         .collect()
+}
+
+/// Whether `pid` is still that app's process (a pid can be reused once it exits).
+fn alive(app: &App, pid: u32) -> bool {
+    comm(&pid.to_string()).as_deref() == Some(app.comm)
 }
 
 pub fn is_running(app: &App) -> bool {
@@ -91,7 +105,8 @@ fn proc_list(pid: u32, file: &str) -> Vec<String> {
 }
 
 /// Quits every instance of `app`, waits up to 15 s for them to exit, and starts
-/// each again as it was. Blocking; run it off the main thread.
+/// each again as it was. One that does not quit is named in the error; the others
+/// come back anyway. Blocking; run it off the main thread.
 pub fn restart(app: &App) -> Result<(), String> {
     let pids = main_pids(app);
     if pids.is_empty() {
@@ -111,14 +126,17 @@ pub fn restart(app: &App) -> Result<(), String> {
             return Err(format!("cannot quit {} ({status})", app.name));
         }
     }
+    // Only the ones asked to quit: a new instance started meanwhile is not ours.
     let deadline = Instant::now() + Duration::from_secs(15);
-    while !main_pids(app).is_empty() {
-        if Instant::now() > deadline {
-            return Err(format!("{} did not quit; restart it by hand", app.name));
-        }
+    while pids.iter().any(|&pid| alive(app, pid)) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(200));
     }
-    for (cmdline, environ) in instances {
+    let mut stuck = 0;
+    for (&pid, (cmdline, environ)) in pids.iter().zip(instances) {
+        if alive(app, pid) {
+            stuck += 1;
+            continue;
+        }
         let Some((program, args)) = cmdline.split_first() else {
             reopen_from_desktop(app)?;
             continue;
@@ -135,7 +153,14 @@ pub fn restart(app: &App) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("cannot reopen {}: {e}", app.name))?;
     }
-    Ok(())
+    match stuck {
+        0 => Ok(()),
+        n if n == pids.len() => Err(format!("{} did not quit; restart it by hand", app.name)),
+        _ => Err(format!(
+            "one {} window did not quit; restart it by hand (the others restarted)",
+            app.name
+        )),
+    }
 }
 
 fn reopen_from_desktop(app: &App) -> Result<(), String> {
@@ -151,6 +176,34 @@ fn reopen_from_desktop(app: &App) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn background_instances_are_not_restarted() {
+        let sh = App {
+            name: "sh",
+            comm: "sh",
+            desktop: &[],
+        };
+        let spawn = |extra: &[&str]| {
+            Command::new("sh")
+                // A second command, so sh does not replace itself with sleep.
+                .args(["-c", "sleep 30; true"])
+                .args(extra)
+                .spawn()
+                .unwrap()
+        };
+        let (mut window, mut background) = (spawn(&[]), spawn(&["--dbus-service"]));
+        std::thread::sleep(Duration::from_millis(100));
+        let pids = main_pids(&sh);
+        assert!(pids.contains(&window.id()));
+        assert!(!pids.contains(&background.id()));
+        assert!(alive(&sh, window.id()));
+        for child in [&mut window, &mut background] {
+            child.kill().unwrap();
+            child.wait().unwrap();
+        }
+        assert!(!alive(&sh, window.id()));
+    }
 
     #[test]
     fn finds_this_test_as_a_main_process() {
