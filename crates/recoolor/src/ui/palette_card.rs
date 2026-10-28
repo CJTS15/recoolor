@@ -1,4 +1,5 @@
-//! One palette in the grid: a strip of swatches, the name, and a check mark when applied.
+//! One palette in the grid: a strip of swatches, the name, a check mark when applied,
+//! and a star to keep it among the favorites.
 
 use gtk::pango;
 use gtk::prelude::*;
@@ -6,6 +7,8 @@ use recoolor_core::Palette;
 
 pub struct PaletteCard {
     pub child: gtk::FlowBoxChild,
+    /// The window keeps the favorites; this only shows and toggles one.
+    pub star: gtk::ToggleButton,
     check: gtk::Image,
 }
 
@@ -62,8 +65,33 @@ impl PaletteCard {
         row.set_margin_bottom(10);
         row.set_margin_start(12);
         row.set_margin_end(12);
+        let star = gtk::ToggleButton::builder()
+            .icon_name("non-starred-symbolic")
+            .valign(gtk::Align::Center)
+            .css_classes(["flat", "circular"])
+            .build();
+        let label = |on: bool| {
+            if on {
+                "Remove from Favorites"
+            } else {
+                "Add to Favorites"
+            }
+        };
+        star.set_tooltip_text(Some(label(false)));
+        star.update_property(&[gtk::accessible::Property::Label(label(false))]);
+        star.connect_toggled(move |star| {
+            let on = star.is_active();
+            star.set_icon_name(if on {
+                "starred-symbolic"
+            } else {
+                "non-starred-symbolic"
+            });
+            star.set_tooltip_text(Some(label(on)));
+            star.update_property(&[gtk::accessible::Property::Label(label(on))]);
+        });
         row.append(&text);
         row.append(&check);
+        row.append(&star);
 
         let card = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -74,7 +102,7 @@ impl PaletteCard {
         card.append(&row);
 
         let child = gtk::FlowBoxChild::builder().child(&card).build();
-        Self { child, check }
+        Self { child, star, check }
     }
 
     pub fn set_applied(&self, applied: bool) {
