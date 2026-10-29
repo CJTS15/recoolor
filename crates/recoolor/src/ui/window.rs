@@ -857,13 +857,26 @@ impl Window {
         } else {
             let extras = self.extras.get();
             let accent = self.interface.as_ref().and_then(desktop::accent_choice);
-            desktop::home().and_then(|home| {
-                login_screen::prefill(
-                    &home,
-                    accent.as_deref(),
-                    extras.icons.as_deref(),
-                    extras.cursors.as_deref(),
-                )
+            // The image the lock screen shows, copied where GDM Settings can read it.
+            let lock = recoolor_core::apps::shell_fade::read_config(&dirs.data).lock_image;
+            let background = match lock {
+                Some(image) => {
+                    recoolor_core::shell::login_background(&dirs.data, std::path::Path::new(&image))
+                        .map(Some)
+                        .map_err(|e| e.to_string())
+                }
+                None => Ok(None),
+            };
+            background.and_then(|background| {
+                desktop::home().and_then(|home| {
+                    login_screen::prefill(
+                        &home,
+                        accent.as_deref(),
+                        extras.icons.as_deref(),
+                        extras.cursors.as_deref(),
+                        background.as_deref(),
+                    )
+                })
             })
         };
         if let Err(e) = targets::remember_login_screen(&dirs, true) {

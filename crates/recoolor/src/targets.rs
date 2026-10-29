@@ -346,7 +346,7 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
         .into_iter()
         .filter_map(|(what, result)| result.err().map(|e| format!("{what}: {e}")))
         .collect();
-    prune_wallpapers(dirs);
+    prune_wallpapers(dirs, extras, look);
     if let Err(e) = state.save(&path) {
         problems.push(format!("cannot record what Recoolor changed: {e}"));
     }
@@ -809,7 +809,7 @@ fn set_shell_extension(
 
 /// Deletes Recoolor's tinted wallpapers that neither the desktop nor the lock
 /// screen uses any more.
-fn prune_wallpapers(dirs: &Dirs) {
+fn prune_wallpapers(dirs: &Dirs, extras: &Extras, look: Option<Look>) {
     let mut keep: Vec<PathBuf> = desktop::background_settings()
         .map(|s| {
             ["picture-uri", "picture-uri-dark"]
@@ -823,6 +823,23 @@ fn prune_wallpapers(dirs: &Dirs) {
             .lock_image
             .map(PathBuf::from),
     );
+    // The lock image for the other half of a pair too: deleting it would make every
+    // switch to that style tint it again (about a second and a half).
+    if let (Some(source), Some((light, dark))) =
+        (extras.lock_image.as_deref(), look.and_then(|l| l.pair))
+    {
+        for palette in [light, dark] {
+            if let Some(stem) = wallpaper::output_stem(
+                &dirs.data,
+                Path::new(source),
+                palette,
+                extras.wallpaper_tint,
+                extras.wallpaper_strength,
+            ) {
+                keep.extend(["jpg", "png"].map(|ext| stem.with_extension(ext)));
+            }
+        }
+    }
     let keep: Vec<&Path> = keep.iter().map(PathBuf::as_path).collect();
     wallpaper::prune(&dirs.data, &keep);
 }
