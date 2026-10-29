@@ -45,6 +45,63 @@ pub fn revoke(path: &Path, entries: &[String]) -> Result<(), ApplyError> {
     Ok(())
 }
 
+/// Makes Qt apps on the KDE runtime use KDE's platform theme, which reads
+/// `~/.config/kdeglobals` (Recoolor's palette); under GNOME they would pick the GTK or
+/// portal one, which ignores it.
+pub const QT_THEME: (&str, &str) = ("QT_QPA_PLATFORMTHEME", "kde");
+
+const ENV_GROUP: &str = "[Environment]";
+
+/// Sets `key=value` for every Flatpak app, unless the user set `key` already. Returns
+/// whether it added it.
+pub fn set_env(path: &Path, (key, value): (&str, &str)) -> Result<bool, ApplyError> {
+    let mut lines = split(&read(path)?);
+    let prefix = format!("{key}=");
+    let (start, end) = match group(&lines, ENV_GROUP) {
+        Some(span) => span,
+        None => {
+            if lines.last().is_some_and(|l| !l.trim().is_empty()) {
+                lines.push(String::new());
+            }
+            lines.push(ENV_GROUP.to_owned());
+            (lines.len() - 1, lines.len())
+        }
+    };
+    if (start + 1..end).any(|i| lines[i].starts_with(&prefix)) {
+        return Ok(false);
+    }
+    lines.insert(start + 1, format!("{prefix}{value}"));
+    write_atomic(path, &join(&lines))?;
+    Ok(true)
+}
+
+/// Takes `key=value` out again, only while it still has Recoolor's value, and the
+/// `[Environment]` group with it when that leaves it empty.
+pub fn unset_env(path: &Path, (key, value): (&str, &str)) -> Result<(), ApplyError> {
+    let text = read(path)?;
+    let mut lines = split(&text);
+    let Some((start, end)) = group(&lines, ENV_GROUP) else {
+        return Ok(());
+    };
+    let ours = format!("{key}={value}");
+    let Some(i) = (start + 1..end).find(|&i| lines[i].trim() == ours) else {
+        return Ok(());
+    };
+    lines.remove(i);
+    if (start + 1..end - 1).all(|i| lines[i].trim().is_empty()) {
+        lines.drain(start..end - 1);
+        while lines.last().is_some_and(|l| l.trim().is_empty()) {
+            lines.pop();
+        }
+    }
+    let new = if lines.is_empty() {
+        String::new()
+    } else {
+        join(&lines)
+    };
+    write_atomic(path, &new)
+}
+
 /// Overrides an administrator set for every user.
 pub const SYSTEM_OVERRIDES: &str = "/var/lib/flatpak/overrides/global";
 
@@ -81,7 +138,12 @@ fn bare(entry: &str) -> &str {
 
 /// The `[Context]` group as (header line index, end line index exclusive).
 fn context(lines: &[String]) -> Option<(usize, usize)> {
-    let start = lines.iter().position(|l| l.trim() == GROUP)?;
+    group(lines, GROUP)
+}
+
+/// A group (`[Context]`, `[Environment]`) as (header line index, end exclusive).
+fn group(lines: &[String], name: &str) -> Option<(usize, usize)> {
+    let start = lines.iter().position(|l| l.trim() == name)?;
     let end = lines[start + 1..]
         .iter()
         .position(|l| l.trim_start().starts_with('['))
@@ -200,6 +262,29 @@ mod tests {
         let (text, added) = add_entries(user, &ENTRIES);
         assert_eq!(added, ["xdg-config/gtk-3.0:ro"]);
         assert_eq!(remove_entries(&text, &added), user);
+    }
+
+    #[test]
+    fn qt_theme_comes_and_goes_and_leaves_the_users_own() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("global");
+        let theirs = "[Context]\nfilesystems=xdg-config/gtk-3.0:ro;\n";
+        std::fs::write(&path, theirs).unwrap();
+        assert!(set_env(&path, QT_THEME).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            format!("{theirs}\n[Environment]\nQT_QPA_PLATFORMTHEME=kde\n")
+        );
+        // Already there: nothing more.
+        assert!(!set_env(&path, QT_THEME).unwrap());
+        unset_env(&path, QT_THEME).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), theirs);
+
+        // The user's own value is never replaced, nor taken out.
+        std::fs::write(&path, "[Environment]\nQT_QPA_PLATFORMTHEME=qt6ct\n").unwrap();
+        assert!(!set_env(&path, QT_THEME).unwrap());
+        unset_env(&path, QT_THEME).unwrap();
+        assert!(std::fs::read_to_string(&path).unwrap().contains("=qt6ct"));
     }
 
     #[test]

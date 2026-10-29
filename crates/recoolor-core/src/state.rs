@@ -42,6 +42,10 @@ pub struct State {
     /// own look then means a GNOME update replaced it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub login_screen: bool,
+    /// Recoolor set `QT_QPA_PLATFORMTHEME=kde` in the Flatpak overrides (for Qt apps on
+    /// the KDE runtime to read its `kdeglobals`); Reset takes it out again.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub qt_env_added: bool,
     /// btop's `color_theme`, `Default` when `btop.conf` had none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub btop_previous: Option<String>,
@@ -150,6 +154,7 @@ mod tests {
             vscode_previous: Some(String::new()),
             btop_previous: Some("Default".into()),
             login_screen: true,
+            qt_env_added: true,
             ohmyposh_previous: Some("$HOME/.config/ohmyposh/catppuccin.omp.json".into()),
             color_scheme_previous: Some("default".into()),
             background_previous: Some(Background {
