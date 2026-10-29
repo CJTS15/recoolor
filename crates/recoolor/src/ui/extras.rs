@@ -57,6 +57,7 @@ pub struct ExtrasRows {
     ptyxis: adw::SwitchRow,
     fish: adw::SwitchRow,
     yazi: adw::SwitchRow,
+    bash: adw::SwitchRow,
     btop: adw::SwitchRow,
     vscode: adw::SwitchRow,
     firefox: adw::SwitchRow,
@@ -236,9 +237,9 @@ impl ExtrasRows {
         let fish = app_switch(
             "fish",
             if ohmyposh {
-                "A Recoolor theme and your oh-my-posh prompt in the palette, for new shells"
+                "A Recoolor theme and your oh-my-posh prompt in the palette; open shells follow"
             } else {
-                "A Recoolor theme, light and dark, for new shells"
+                "A Recoolor theme, light and dark; open shells follow"
             },
             desktop::fish_installed(),
             "fish is not installed",
@@ -248,6 +249,12 @@ impl ExtrasRows {
             "Recoolor flavors, light and dark; your theme.toml comes back on Reset. New yazi windows show it",
             gtk::glib::find_program_in_path("yazi").is_some(),
             "yazi is not installed",
+        );
+        let bash = app_switch(
+            "bash",
+            "The prompt in the palette, through ~/.bashrc.d; open shells follow at their next prompt",
+            true,
+            "",
         );
         let btop = app_switch(
             "btop",
@@ -343,6 +350,7 @@ impl ExtrasRows {
                         &yazi,
                         Box::new(|_| gtk::glib::find_program_in_path("yazi").is_some()),
                     ),
+                    app(&bash, Box::new(|_| true)),
                     app(&btop, launcher(&["btop.desktop"])),
                 ],
             ),
@@ -420,6 +428,7 @@ impl ExtrasRows {
             ptyxis,
             fish,
             yazi,
+            bash,
             btop,
             vscode,
             firefox,
@@ -485,6 +494,7 @@ impl ExtrasRows {
             (&self.ptyxis, extras.ptyxis),
             (&self.fish, extras.fish),
             (&self.yazi, extras.yazi),
+            (&self.bash, extras.bash),
             (&self.btop, extras.btop),
             (&self.vscode, extras.vscode),
             (&self.firefox, extras.firefox),
@@ -558,6 +568,7 @@ impl ExtrasRows {
             ptyxis: self.ptyxis.is_active(),
             fish: self.fish.is_active(),
             yazi: self.yazi.is_active(),
+            bash: self.bash.is_active(),
             btop: self.btop.is_active(),
             vscode: self.vscode.is_active(),
             firefox: self.firefox.is_active(),
