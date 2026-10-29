@@ -4,7 +4,7 @@
 %global debug_package %{nil}
 
 Name:           recoolor
-Version:        1.4.0
+Version:        1.5.0
 Release:        1%{?dist}
 Summary:        Recolor GNOME and its apps with one palette
 License:        GPL-3.0-or-later
@@ -64,6 +64,11 @@ appstreamcli validate --no-net %{buildroot}%{_metainfodir}/%{app_id}.metainfo.xm
 %{_datadir}/icons/hicolor/symbolic/apps/%{app_id}-symbolic.svg
 
 %changelog
+* Thu Oct 29 2026 CJ Sabijon <cjsabijon@gmail.com> - 1.5.0-1
+- Favorites, grouped apps, one Restart Apps dialog; yazi, bash, fish and
+  oh-my-posh in the palette; Qt Flatpaks; Firefox pages and new tab; faster
+  wallpapers and light/dark; login screen through Update…; docs.
+
 * Tue Oct 27 2026 CJ Sabijon <cjsabijon@gmail.com> - 1.4.0-1
 - Follows GNOME's design guidelines: readable text colors, visible separators,
   lighter cards, High Contrast in the Shell; adaptive window; smoother fades.

@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.5.0 — 2026-10-29
+
+Window:
+
+- The **Recoolor** button is back in the header bar, with Reset… in its dropdown.
+- Favorite palettes: a star on each card, and a filter to show only favorites.
+- Apps in groups by kind (Terminal, Browsers and Email, GNOME Apps, Flatpak Apps,
+  Custom Themes, Other Apps), each shown only when the app is installed.
+- One **Restart Apps** dialog lists every open app that needs a restart, Flatpaks
+  included, and restarts the ones you tick. Firefox restarts reliably, also twice
+  in a row.
+- Wallpaper rows on two lines, HEIC previews, and a collapsible Preview.
+
+Apps:
+
+- yazi: Recoolor flavors for light and dark.
+- bash: a prompt in the palette, following light/dark at the next prompt.
+- fish: a Recoolor theme, and an oh-my-posh prompt recolored, both live in open
+  shells.
+- Qt Flatpaks on the KDE runtime take the palette when they start.
+- VS Code switches light and dark under the screen fade, without a jump.
+- Firefox: its own pages (Settings and other `about:` pages), the new tab and the
+  Blank Page take the palette, without the new theme's violet.
+
+Desktop:
+
+- Shell: cards are lighter in light style, as in apps, and hovering them shows.
+- SearchLightNG is styled only when its widgets are the ones Recoolor knows.
+- Login screen: Recoolor shows which palette it has, and **Update…** fills in
+  GDM Settings, the lock screen image included.
+- Wallpapers tint much faster: at most 4K, light and dark at once. The lock image
+  is kept for both halves of a pair, so switching to light is as fast as to dark.
+- Fixed: Reset could make the Shell log a missing stylesheet.
+
+Docs: a Scope and limitations section in the README, and
+`docs/HOW-RECOOLOR-WORKS.md` on how Recoolor chooses palettes and themes each part
+of the desktop.
+
 ## 1.4.0 — 2026-10-27
 
 Follows GNOME's design guidelines (HIG):
