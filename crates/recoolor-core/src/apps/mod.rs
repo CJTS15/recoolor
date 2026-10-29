@@ -13,6 +13,7 @@ pub mod shell_fade;
 pub mod slack;
 pub mod spotifast;
 pub mod vscode;
+pub mod yazi;
 
 use std::fs;
 use std::io;

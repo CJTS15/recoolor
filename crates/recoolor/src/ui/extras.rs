@@ -56,6 +56,7 @@ pub struct ExtrasRows {
     pub slack: gtk::Button,
     ptyxis: adw::SwitchRow,
     fish: adw::SwitchRow,
+    yazi: adw::SwitchRow,
     btop: adw::SwitchRow,
     vscode: adw::SwitchRow,
     firefox: adw::SwitchRow,
@@ -242,6 +243,12 @@ impl ExtrasRows {
             desktop::fish_installed(),
             "fish is not installed",
         );
+        let yazi = app_switch(
+            "yazi",
+            "Recoolor flavors, light and dark; your theme.toml comes back on Reset. New yazi windows show it",
+            gtk::glib::find_program_in_path("yazi").is_some(),
+            "yazi is not installed",
+        );
         let btop = app_switch(
             "btop",
             "Selects a generated “recoolor” theme; changes open windows",
@@ -332,6 +339,10 @@ impl ExtrasRows {
                 vec![
                     app(&ptyxis, launcher(&["org.gnome.Ptyxis.desktop"])),
                     app(&fish, Box::new(|_| desktop::fish_installed())),
+                    app(
+                        &yazi,
+                        Box::new(|_| gtk::glib::find_program_in_path("yazi").is_some()),
+                    ),
                     app(&btop, launcher(&["btop.desktop"])),
                 ],
             ),
@@ -408,6 +419,7 @@ impl ExtrasRows {
             slack,
             ptyxis,
             fish,
+            yazi,
             btop,
             vscode,
             firefox,
@@ -472,6 +484,7 @@ impl ExtrasRows {
             (&self.adw_gtk3, extras.adw_gtk3),
             (&self.ptyxis, extras.ptyxis),
             (&self.fish, extras.fish),
+            (&self.yazi, extras.yazi),
             (&self.btop, extras.btop),
             (&self.vscode, extras.vscode),
             (&self.firefox, extras.firefox),
@@ -544,6 +557,7 @@ impl ExtrasRows {
             cursors: chosen(&self.cursors, &self.cursor_names),
             ptyxis: self.ptyxis.is_active(),
             fish: self.fish.is_active(),
+            yazi: self.yazi.is_active(),
             btop: self.btop.is_active(),
             vscode: self.vscode.is_active(),
             firefox: self.firefox.is_active(),
