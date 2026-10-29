@@ -87,14 +87,15 @@ fn system_theme(kind: &str, name: &str) -> bool {
         .any(|dir| Path::new(dir).join(kind).join(name).is_dir())
 }
 
-/// Fills in GDM Settings' appearance: Recoolor's theme, and the accent, icons and
-/// cursors when given (the latter only if installed system-wide). Only while it is
-/// closed.
+/// Fills in GDM Settings' appearance: Recoolor's theme, and the accent, icons,
+/// cursors and background image when given (icons and cursors only if installed
+/// system-wide). Only while it is closed.
 pub fn prefill(
     home: &Path,
     accent: Option<&str>,
     icons: Option<&str>,
     cursors: Option<&str>,
+    background: Option<&Path>,
 ) -> Result<(), String> {
     let path = keyfile(home);
     let file = glib::KeyFile::new();
@@ -112,6 +113,14 @@ pub fn prefill(
     }
     if let Some(cursors) = cursors.filter(|n| system_theme("icons", n)) {
         set("cursor-theme", cursors);
+    }
+    if let Some(background) = background {
+        set("background-type", "image");
+        // A path with a quote would end the GVariant string early.
+        set(
+            "background-image",
+            &background.display().to_string().replace('\'', "\\'"),
+        );
     }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -141,13 +150,25 @@ mod tests {
             "[io/github/realmazharhussain/GdmSettings]\ninitial-warning=false\n",
         )
         .unwrap();
-        prefill(&home, Some("pink"), Some("not-installed-anywhere"), None).unwrap();
+        let background = Path::new("/home/me/.local/share/themes/Recoolor/login-background.jpg");
+        prefill(
+            &home,
+            Some("pink"),
+            Some("not-installed-anywhere"),
+            None,
+            Some(background),
+        )
+        .unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("initial-warning=false"));
         assert!(text.contains("[io/github/realmazharhussain/GdmSettings/appearance]"));
         assert!(text.contains("shell-theme='Recoolor'"));
         assert!(text.contains("accent-color='pink'"));
         assert!(!text.contains("icon-theme"));
+        assert!(text.contains("background-type='image'"));
+        assert!(text.contains(
+            "background-image='/home/me/.local/share/themes/Recoolor/login-background.jpg'"
+        ));
         std::fs::remove_dir_all(&home).unwrap();
     }
 }

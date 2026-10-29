@@ -39,13 +39,40 @@ pub fn copied_palette_id(css: &str) -> Option<&str> {
     rest.split_once(" */").map(|(id, _)| id)
 }
 
-/// Removes Recoolor's stylesheet and the folders it leaves empty. Returns whether there
-/// was one; anything else in the theme folder stays.
+/// A copy of `image` in the theme folder, as `login-background.<ext>`, for GDM Settings:
+/// its sandbox can read `~/.local/share/themes` but not the rest of the home folder.
+pub fn login_background(data_home: &Path, image: &Path) -> Result<PathBuf, ApplyError> {
+    let ext = image.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
+    let path = theme_dir(data_home).join(format!("{LOGIN_BACKGROUND}.{ext}"));
+    for old in login_backgrounds(data_home) {
+        fs::remove_file(&old).map_err(io_err(&old))?;
+    }
+    fs::create_dir_all(theme_dir(data_home)).map_err(io_err(&path))?;
+    fs::copy(image, &path).map_err(io_err(image))?;
+    Ok(path)
+}
+
+const LOGIN_BACKGROUND: &str = "login-background";
+
+fn login_backgrounds(data_home: &Path) -> Vec<PathBuf> {
+    fs::read_dir(theme_dir(data_home))
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.file_stem().is_some_and(|s| s == LOGIN_BACKGROUND))
+        .collect()
+}
+
+/// Removes Recoolor's stylesheet, its login background, and the folders they leave
+/// empty. Returns whether there was a stylesheet; anything else in the folder stays.
 pub fn remove(data_home: &Path) -> Result<bool, ApplyError> {
     let path = css_path(data_home);
     match css_state(&path)? {
         CssState::Recoolor(_) | CssState::RecoolorPair { .. } => {
             fs::remove_file(&path).map_err(io_err(&path))?;
+            for background in login_backgrounds(data_home) {
+                fs::remove_file(&background).map_err(io_err(&background))?;
+            }
             // remove_dir only succeeds on empty folders, which is exactly what we want.
             let _ = fs::remove_dir(path.parent().expect("css has a parent"));
             let _ = fs::remove_dir(theme_dir(data_home));
@@ -66,6 +93,24 @@ mod tests {
         let system = format!("stage {{ color: white; }}\n{CSS}");
         assert_eq!(copied_palette_id(&system), Some("dracula"));
         assert_eq!(copied_palette_id("stage { color: white; }\n"), None);
+    }
+
+    #[test]
+    fn login_background_goes_with_the_theme() {
+        let home = tempfile::tempdir().unwrap();
+        write(home.path(), CSS).unwrap();
+        let image = home.path().join("lock.png");
+        fs::write(&image, b"png").unwrap();
+        let copy = login_background(home.path(), &image).unwrap();
+        assert!(copy.ends_with("themes/Recoolor/login-background.png"));
+        assert_eq!(fs::read(&copy).unwrap(), b"png");
+        // Another image replaces it, whatever its type.
+        let jpeg = home.path().join("lock.jpg");
+        fs::write(&jpeg, b"jpg").unwrap();
+        login_background(home.path(), &jpeg).unwrap();
+        assert!(!copy.exists());
+        assert!(remove(home.path()).unwrap());
+        assert!(!theme_dir(home.path()).exists());
     }
 
     #[test]
