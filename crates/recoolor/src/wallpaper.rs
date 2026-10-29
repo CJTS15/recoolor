@@ -34,8 +34,12 @@ pub fn render(
             .and_then(|e| e.to_str())
             .is_some_and(|e| e.eq_ignore_ascii_case(want))
     };
-    // SVGs have no pixel size of their own; render them at 4K.
-    let image = if is("svg") {
+    // At most 4K: GNOME scales bigger images down anyway, and every extra pixel costs
+    // time to tint and save (a 6K HEIC has 2.4 times the pixels). SVGs have no pixel
+    // size of their own, so they render at 4K too.
+    // ponytail: fixed at 4K; a 5K or 8K screen would want its own size.
+    let large = Pixbuf::file_info(source).is_none_or(|(_, w, h)| w > 3840 || h > 2160);
+    let image = if is("svg") || large {
         Pixbuf::from_file_at_scale(source, 3840, 2160, true)
     } else {
         Pixbuf::from_file(source)

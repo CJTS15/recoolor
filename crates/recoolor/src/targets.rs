@@ -537,11 +537,16 @@ fn set_wallpaper(
             extras.wallpaper_strength,
         )
     };
-    let light_file = light.map(|s| render(s, light_palette)).transpose()?;
-    let dark_file = dark
-        .or(light)
-        .map(|s| render(s, dark_palette))
-        .transpose()?;
+    // Both at once: tinting a large image takes about a second.
+    let (light_file, dark_file) = std::thread::scope(|scope| {
+        let light_job = scope.spawn(|| light.map(|s| render(s, light_palette)).transpose());
+        let dark_file = dark.or(light).map(|s| render(s, dark_palette)).transpose();
+        let light_file = light_job
+            .join()
+            .unwrap_or_else(|_| Err("tinting the light wallpaper failed".into()));
+        (light_file, dark_file)
+    });
+    let (light_file, dark_file) = (light_file?, dark_file?);
     let uri = |path: &PathBuf| gio::File::for_path(path).uri().to_string();
     // Light alone covers both styles; dark alone leaves light style as it was.
     let light_uri = light_file.as_ref().map_or(previous.picture_uri, uri);
