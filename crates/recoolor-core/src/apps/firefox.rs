@@ -122,6 +122,15 @@ fn content_variables(palette: &Palette) -> String {
         ("--newtab-background-color", c.base),
         ("--newtab-background-color-secondary", r.card),
         ("--newtab-text-primary-color", c.text),
+        // firefox-gnome-theme paints the new tab from these, on `body`, and defines
+        // them again for pages (Adwaita's); without them the new tab stays white.
+        ("--gnome-window-background", c.base),
+        ("--gnome-window-color", c.text),
+        ("--gnome-view-background", c.mantle),
+        ("--gnome-menu-background", r.card),
+        ("--gnome-card-background", r.card),
+        ("--gnome-accent-bg", c.accent),
+        ("--gnome-accent", c.accent),
     ] {
         let _ = writeln!(css, "  {name}: {color} !important;");
     }
@@ -345,6 +354,10 @@ mod tests {
         let base =
             |p: &Palette| format!("--newtab-background-color: {} !important;", p.colors.base);
         assert!(css.contains(&base(&latte)) && dark.contains(&base(&mocha)));
+        // Through firefox-gnome-theme's own new-tab rule as well.
+        let gnome =
+            |p: &Palette| format!("--gnome-window-background: {} !important;", p.colors.base);
+        assert!(css.contains(&gnome(&latte)) && dark.contains(&gnome(&mocha)));
         // The window frame gets Nova's button colors too.
         assert!(
             render(&mocha, None).contains(&format!("--button-background-color-hover: {hover}"))
