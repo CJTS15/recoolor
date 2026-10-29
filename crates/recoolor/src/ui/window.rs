@@ -729,6 +729,7 @@ impl Window {
             },
             move |w, (result, hint)| match result {
                 Ok(problems) => {
+                    w.show_extras_on_disk();
                     w.offer_restart(&name, restartable);
                     if let Some(hint) = hint {
                         log::info(&hint);
@@ -776,6 +777,7 @@ impl Window {
         self.run_busy(
             move || targets::reset(&dirs),
             |w, (outcomes, problems)| {
+                w.show_extras_on_disk();
                 if !outcomes.is_empty() {
                     w.toast(&reset_summary(&outcomes));
                 }
@@ -802,6 +804,14 @@ impl Window {
                 w.refresh_login();
             },
         );
+    }
+
+    /// The switches as Recoolor and Reset left them on disk. Only after those: a
+    /// restart must not undo switches changed meanwhile.
+    fn show_extras_on_disk(&self) {
+        if let Some(dirs) = &self.dirs {
+            self.extras.set(&targets::current(dirs));
+        }
     }
 
     /// The Login Screen row's status: what the login screen shows now.
@@ -906,9 +916,6 @@ impl Window {
                     "Something went wrong",
                     "Recoolor stopped partway, so some changes may be missing. Try again, or Reset.",
                 ),
-            }
-            if let Some(dirs) = &w.dirs {
-                w.extras.set(&targets::current(dirs));
             }
             w.refresh();
             w.update_apply();

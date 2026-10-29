@@ -11,7 +11,7 @@ use gtk::gio::prelude::*;
 use gtk::glib;
 use recoolor_core::apps::{
     self, btop, firefox, fish, gtksourceview, kdeglobals, ohmyposh, ptyxis, shell_fade, spotifast,
-    vscode,
+    vscode, yazi,
 };
 use recoolor_core::palette::{self, Palette};
 use recoolor_core::state::{self, State};
@@ -91,6 +91,8 @@ pub struct Extras {
     pub cursors: Option<String>,
     pub ptyxis: bool,
     pub fish: bool,
+    /// yazi's flavors and `theme.toml`.
+    pub yazi: bool,
     pub btop: bool,
     pub vscode: bool,
     pub firefox: bool,
@@ -136,6 +138,7 @@ pub fn current(dirs: &Dirs) -> Extras {
         // A built-in palette leaves no file, so the record alone says it is on.
         ptyxis: state.ptyxis_previous.is_some(),
         fish: apps::is_ours(&fish::path(&dirs.config)),
+        yazi: apps::is_ours(&yazi::theme_path(&dirs.config)),
         btop: state.btop_previous.is_some(),
         vscode: state.vscode_previous.is_some()
             && desktop::home().is_ok_and(|h| vscode::extension_installed(&h)),
@@ -305,6 +308,7 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
             set_ptyxis(dirs, &mut state, when(extras.ptyxis)),
         ),
         ("fish", set_fish(dirs, &mut state, when(extras.fish))),
+        ("yazi", set_yazi(dirs, when(extras.yazi))),
         (
             "btop",
             set_btop(dirs, &mut state, when(extras.btop).map(|l| l.now)),
@@ -635,6 +639,14 @@ fn set_ptyxis(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result<(), 
         desktop::set_string(&profile, "palette", &previous)?;
     }
     desktop::set_string(&profile, "palette", ptyxis::PALETTE_ID)
+}
+
+fn set_yazi(dirs: &Dirs, look: Option<Look>) -> Result<(), String> {
+    match look {
+        Some(look) => yazi::write(&dirs.config, look.now, look.pair),
+        None => yazi::remove(&dirs.config).map(|_| ()),
+    }
+    .map_err(|e| e.to_string())
 }
 
 fn set_fish(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result<(), String> {
