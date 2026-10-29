@@ -341,7 +341,7 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
         ),
         (
             "Qt and KDE apps",
-            set_kde(dirs, when(extras.kde).map(|l| l.now)),
+            set_kde(dirs, &mut state, when(extras.kde).map(|l| l.now)),
         ),
         (
             "Spotifast",
@@ -950,18 +950,35 @@ fn set_text_editor(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result
     desktop::set_string(&settings, "style-scheme", gtksourceview::SCHEME)
 }
 
-fn set_kde(dirs: &Dirs, palette: Option<&Palette>) -> Result<(), String> {
+fn set_kde(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Result<(), String> {
+    let overrides = flatpak::overrides_path(&dirs.data);
+    let err = |e: ApplyError| e.to_string();
     match palette {
-        Some(p) => kdeglobals::write(&dirs.config, p).map_err(|e| match e {
-            ApplyError::Foreign { .. } => {
-                "you have your own ~/.config/kdeglobals, so Recoolor leaves it alone".to_owned()
+        Some(p) => {
+            kdeglobals::write(&dirs.config, p).map_err(|e| match e {
+                ApplyError::Foreign { .. } => {
+                    "you have your own ~/.config/kdeglobals, so Recoolor leaves it alone".to_owned()
+                }
+                e => e.to_string(),
+            })?;
+            // Qt apps on the KDE runtime read kdeglobals only through KDE's own
+            // platform theme, which they skip under GNOME.
+            if !state.qt_env_added {
+                state.qt_env_added =
+                    flatpak::set_env(&overrides, flatpak::QT_THEME).map_err(err)?;
             }
-            e => e.to_string(),
-        }),
-        None => kdeglobals::remove(&dirs.config)
-            .map(drop)
-            .map_err(|e| e.to_string()),
+        }
+        None => {
+            kdeglobals::remove(&dirs.config).map_err(err)?;
+            if state.qt_env_added {
+                flatpak::unset_env(&overrides, flatpak::QT_THEME).map_err(err)?;
+                state.qt_env_added = false;
+            }
+        }
     }
+    // ponytail: KDE-runtime Flatpaks take the palette when they start, not live: under
+    // GNOME their platform theme hears of changes only through Plasma's portal.
+    Ok(())
 }
 
 fn set_spotifast(dirs: &Dirs, palette: Option<&Palette>) -> Result<(), String> {
