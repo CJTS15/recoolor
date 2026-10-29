@@ -31,8 +31,38 @@ pub fn shell(palette: &Palette, default_css: &str) -> String {
         + &recolor(palette, pristine(default_css))
         + &osd_level(palette)
         + &light_switcher(palette)
+        + &light_card_hover(palette)
         + &switcher_labels(palette)
         + "\n"
+}
+
+/// In light style GNOME darkens a hovered card by 4%, which on Recoolor's lighter
+/// cards lands on the popup's own color, so the hover vanishes. Instead, as
+/// libadwaita's rows do, mix in a little of the text, from the popup's color so
+/// the card ends up below both: 6% hovered, 12% pressed.
+fn light_card_hover(palette: &Palette) -> String {
+    if palette.variant != Variant::Light {
+        return String::new();
+    }
+    let c = &palette.colors;
+    let cards = |state: &str| {
+        [
+            ".quick-toggle-menu",
+            ".message",
+            ".events-button",
+            ".world-clocks-button",
+            ".weather-button",
+        ]
+        .map(|class| format!("{class}{state}"))
+        .join(", ")
+    };
+    format!(
+        "\n{} {{ background-color: {}; }}\n{} {{ background-color: {}; }}\n",
+        cards(":hover"),
+        c.base.mix(c.text, 0.06),
+        cards(":active"),
+        c.base.mix(c.text, 0.12),
+    )
 }
 
 /// The Alt+Tab switcher's app and window titles in the palette's text. Inheriting
@@ -179,7 +209,8 @@ pub fn shell_popups(palette: &Palette, bms_css: &str) -> String {
                 let color = match () {
                     _ if !fill => c.text,
                     _ if always_dark => c.text,
-                    _ if card => c.surface,
+                    // As apps' cards: surface in dark style, lighter than the window in light.
+                    _ if card => Roles::new(palette).card,
                     _ => c.base,
                 };
                 let alpha = if variant == "transparent" && fill {
@@ -509,13 +540,14 @@ fn map(color: Color, palette: &Palette, text: bool) -> Color {
                 .base
                 .mix(c.text, (ADWAITA_LIGHT - l) / (ADWAITA_LIGHT - ADWAITA_DARK)),
             // Lighter than the popover: white text on the dark OSDs and panel stays
-            // near white; white cards take the palette's surface.
+            // near white; white cards take the palette's card color, as in apps.
             Variant::Light if text => c
                 .base
                 .mix(WHITE, (l - ADWAITA_LIGHT) / (1.0 - ADWAITA_LIGHT) * 0.5),
-            Variant::Light => c
-                .base
-                .mix(c.surface, (l - ADWAITA_LIGHT) / (1.0 - ADWAITA_LIGHT)),
+            Variant::Light => c.base.mix(
+                Roles::new(palette).card,
+                (l - ADWAITA_LIGHT) / (1.0 - ADWAITA_LIGHT),
+            ),
         };
     };
 
@@ -739,12 +771,29 @@ mod tests {
             ".d { color: st-mix(#fafafb, #222226, 9%); background: white; }\n\
              .e { color: white; background-color: whitesmoke; }",
         );
-        // White cards take the surface (#ccd0da); white text stays near white.
+        // White cards take the apps' card color (#f9f9fb); white text stays near white.
         assert_eq!(
             out,
-            ".d { color: st-mix(#eff1f5, #4c4f69, 9%); background: #ccd0da; }\n\
+            ".d { color: st-mix(#eff1f5, #4c4f69, 9%); background: #f9f9fb; }\n\
              .e { color: #f7f8fa; background-color: #ebedf2; }"
         );
+    }
+
+    #[test]
+    fn light_cards_show_their_hover() {
+        let latte = palette("catppuccin-latte");
+        let card = Roles::new(&latte).card;
+        let hover = latte.colors.base.mix(latte.colors.text, 0.06);
+        let css = shell(
+            &latte,
+            ".events-button:hover { background-color: st-darken(#ffffff, 4%); }",
+        );
+        assert!(css.contains(&format!(
+            ".weather-button:hover {{ background-color: {hover}; }}"
+        )));
+        // Visibly apart from both the card and the popup behind it.
+        assert!(hover.contrast(card) > 1.1 && hover.contrast(latte.colors.base) > 1.05);
+        assert!(!shell(&palette("catppuccin-mocha"), "").contains(".weather-button:hover"));
     }
 
     #[test]
@@ -757,7 +806,8 @@ mod tests {
         }
         let latte = palette("catppuccin-latte");
         assert_eq!(map(hex("#fafafb"), &latte, false), latte.colors.base);
-        assert_eq!(map(WHITE, &latte, false), latte.colors.surface);
+        // Light cards as in apps: a step lighter than the window, not the darker surface.
+        assert_eq!(map(WHITE, &latte, false), Roles::new(&latte).card);
     }
 
     #[test]
