@@ -64,21 +64,27 @@ const PACKAGE: &str = r#"{
 
 /// Writes the extension with `palette` as the theme for its variant. The other
 /// variant's file keeps whatever it had, or gets the same palette the first time.
-pub fn write_extension(home: &Path, palette: &Palette) -> Result<(), ApplyError> {
+/// Writes the extension. Returns whether `palette`'s theme file changed: only then
+/// can VS Code's copy of it (cached once per session) be out of date. An unchanged
+/// file is not written, since VS Code repaints whenever its theme file is.
+pub fn write_extension(home: &Path, palette: &Palette) -> Result<bool, ApplyError> {
     let dir = extension_dir(home);
     write_owned(&dir.join("package.json"), PACKAGE)?;
     let theme = theme(palette);
     let themes = dir.join("themes");
     fs::create_dir_all(&themes).map_err(io_err(&themes))?;
+    let mut changed = false;
     for variant in [Variant::Dark, Variant::Light] {
         let path = theme_path(home, variant);
-        if variant == palette.variant || !path.exists() {
+        let stale = fs::read_to_string(&path).ok().as_deref() != Some(theme.as_str());
+        if (variant == palette.variant && stale) || !path.exists() {
             // In place, not renamed over: `_watch` follows the file it first saw, so a
             // replaced file is reloaded once and then never again.
             fs::write(&path, &theme).map_err(io_err(&path))?;
+            changed |= variant == palette.variant;
         }
     }
-    Ok(())
+    Ok(changed)
 }
 
 /// Removes the extension if it is Recoolor's. Returns whether it was.
@@ -433,8 +439,10 @@ mod tests {
             .into_iter()
             .find(|p| p.id == "rose-pine-dawn")
             .unwrap();
-        write_extension(home.path(), &rose).unwrap();
+        assert!(write_extension(home.path(), &rose).unwrap());
         assert_eq!(inode(), before);
+        // The same palette again: nothing to write, so VS Code repaints nothing.
+        assert!(!write_extension(home.path(), &rose).unwrap());
         assert!(
             fs::read_to_string(&light)
                 .unwrap()

@@ -265,6 +265,12 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
         Err(e) => return vec![format!("left the extras alone: {e}")],
     };
     let results = [
+        // First: VS Code switches theme a moment after its settings change, and the
+        // rest of this (and the fade's settle) gives it time to do so under the still.
+        (
+            "VS Code",
+            set_vscode(dirs, &mut state, when(extras.vscode).map(|l| l.now)),
+        ),
         (
             "Flatpak apps",
             set_flatpak(dirs, &mut state, extras.flatpak),
@@ -312,10 +318,6 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
         (
             "btop",
             set_btop(dirs, &mut state, when(extras.btop).map(|l| l.now)),
-        ),
-        (
-            "VS Code",
-            set_vscode(dirs, &mut state, when(extras.vscode).map(|l| l.now)),
         ),
         (
             "Firefox",
@@ -984,7 +986,7 @@ fn set_vscode(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resu
     if !desktop::vscode_installed(&dirs.config) {
         return Err("open VS Code once first, so it has a settings file".into());
     }
-    vscode::write_extension(&home, palette).map_err(err)?;
+    let theme_changed = vscode::write_extension(&home, palette).map_err(err)?;
     let text = vscode::read_settings(&path).map_err(err)?;
     state
         .vscode_previous
@@ -995,9 +997,12 @@ fn set_vscode(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resu
     let selected = vscode::set_theme(&text, vscode::label(palette));
     if selected != text {
         vscode::write_settings(&path, &selected).map_err(err)?;
-        // VS Code reads each theme file once per session and watches only the current
-        // one, so the theme it switches to may be stale. Rewrite it unchanged once VS
-        // Code has switched, which reloads it.
+    }
+    // VS Code reads each theme file once per session and watches only the current one,
+    // so a theme whose colors changed may be stale when it switches to it. Rewrite it
+    // unchanged once VS Code has switched, which reloads it. Only then: the reload
+    // repaints, after the screen fade has ended.
+    if selected != text && theme_changed {
         let theme = vscode::theme_path(&home, palette.variant);
         let rewrite = std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(2));
