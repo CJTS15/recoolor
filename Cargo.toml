@@ -14,3 +14,8 @@ recoolor-core = { path = "crates/recoolor-core" }
 [profile.release]
 lto = "thin"
 strip = true
+
+# The wallpaper tint runs over every pixel: unoptimized it is about 25 times slower,
+# which makes test builds wait seconds for each image.
+[profile.dev.package.recoolor-core]
+opt-level = 3
