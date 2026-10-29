@@ -37,11 +37,11 @@ Recoolor changed is put back, then `sudo dnf remove recoolor` or
 ## Using it
 
 Open **Recoolor**, pick a palette card to preview it on Recoolor's own window, turn
-on what else it should theme, and **Apply** (atop the side pane). **Reset**, in
-Apply's dropdown, undoes all of it after asking. The search box above the palettes
-finds one by name, in light or dark; **Show All** lists both styles. The main menu
-(☰) has **About Recoolor**. The window adapts: one column with Apply in a bottom bar
-when narrow, four cards per line when maximized.
+on what else it should theme, and press **Recoolor** in the header bar. **Reset…**,
+in its dropdown, undoes all of it after asking. The search box above the palettes
+finds one by name, in light or dark; **Show All** lists both styles, and the star on
+a card keeps it among your favorites. The main menu (☰) has **About Recoolor**. The
+window adapts: one column when narrow, four cards per line when maximized.
 
 - **Light and dark:** turn on **Follow System Style** to use one palette in light
   style and another in dark (both lists are searchable). Everything switches with
@@ -50,10 +50,11 @@ when narrow, four cards per line when maximized.
   Blue gives the palette's blue, Pink its pink, and so on. It sets GNOME's accent
   too, so Settings → Appearance shows the same choice, and picking there works as
   well. **Palette's Own** uses the palette's signature accent.
-- **Restart Now:** apps read their theme when they start. After Apply, Recoolor
-  offers to restart Firefox, Thunderbird and Chrome if they are open: each quits
-  the way its own Quit does, saving its session, and comes back as it was. Files
-  and Calendar keep running in the background, so Apply restarts those by itself.
+- **Restart Apps:** apps read their theme when they start. After a new palette,
+  Recoolor lists the open apps that need a restart and restarts the ones you tick:
+  each quits the way its own Quit does, saving its session, and comes back as it
+  was. Files and Calendar keep running in the background, so Recoolor restarts
+  those by itself.
 
 The same works from the command line:
 
@@ -78,19 +79,22 @@ recoolor show catppuccin-mocha [gtk3|shell]       # print the generated CSS
 | **Wallpaper** | A light and a dark wallpaper, optionally tinted to the palette: **Match Palette** keeps the image and moves its colors to the palette's, **Mono** makes a gradient map. |
 | **Lock screen** | An image of its own, sharp or blurred (GNOME otherwise shows the desktop wallpaper, blurred). |
 | **Icons and cursors** | Any installed theme. |
-| **Login screen** | Through GDM Settings: **Set Up…** explains the one-time step. GDM keeps a copy of the theme from when GDM Settings last applied it, so after a palette change Recoolor reminds you to apply it there again. |
+| **Login screen** | Through GDM Settings: **Set Up…** explains the one-time step, then **Update…** fills in GDM Settings' choices (theme, accent, icons, cursors, background) and opens it. GDM keeps a copy of the theme from when GDM Settings last applied it, so after a palette change Recoolor reminds you to apply it there again. |
 
-Apps with themes of their own, in the **Apps** group:
+Apps with themes of their own, in the Terminal, Browsers and Email, GNOME Apps,
+Custom Themes and Other Apps groups:
 
 | App | How | Live? |
 |---|---|---|
 | Terminal (Ptyxis) | Gogh's palette for it when there is one, else a generated one | Yes |
-| fish | Your fish theme for the palette, else generated colors | New shells |
+| fish | Your fish theme for the palette, else generated colors; an oh-my-posh prompt gets the palette too | Yes |
+| bash | A prompt in the palette's colors (`~/.bashrc.d/recoolor.sh`) | At the next prompt |
 | btop | A generated `recoolor.theme`, selected in `btop.conf` | Yes |
+| yazi | `recoolor-light` and `recoolor-dark` flavors | New windows |
 | Text Editor | A style scheme for light and dark | Yes |
-| VS Code | A local Recoolor theme extension | Yes, after one Reload Window |
-| Firefox, Thunderbird | `userChrome.css` (needs `toolkit.legacyUserProfileCustomizations.stylesheets`, and their theme following the system) | Restart Now once; then light/dark switches live |
-| Chrome | Its GTK mode (Settings → Appearance → GTK) | Restart Now |
+| VS Code | A local Recoolor theme extension | Yes |
+| Firefox, Thunderbird | `userChrome.css` (needs `toolkit.legacyUserProfileCustomizations.stylesheets`, and their theme following the system) | One restart; then light/dark switches live |
+| Chrome | Its GTK mode (Settings → Appearance → GTK) | After a restart |
 | Spotifast | A Recoolor custom theme | Yes |
 | Slack | Shows the four colors to paste in its theme settings | Manual |
 
@@ -137,6 +141,96 @@ them as text, a clear accent, near-neutral windows that are neither pure
 black nor dim, and colors far enough apart to tell apart. `scripts/import-gogh.py`
 converts them from Gogh's `data/themes.json`; a test holds every one to those
 thresholds.
+
+How the palettes are chosen, and how each part of the desktop is themed, is
+written up in [docs/HOW-RECOOLOR-WORKS.md](docs/HOW-RECOOLOR-WORKS.md).
+
+## Scope and limitations
+
+Recoolor themes the GNOME desktop from outside the apps, through the files and
+settings each one reads. Where an app offers no such way, or reads it only once,
+these are the limits:
+
+**GTK and libadwaita apps**
+
+- A new palette shows after the app restarts: GTK reads `gtk.css` only at startup.
+  Light/dark switches live.
+- GTK3 apps without adw-gtk3 get their common widgets recolored, not the full
+  libadwaita look.
+
+**Qt and KDE apps**
+
+- Qt Flatpaks (Kdenlive, EasyEffects and the like) take the palette when
+  they start, but do not follow a light/dark switch while running: inside Flatpak,
+  KDE's platform theme only listens to the settings portal, and only Plasma's portal
+  reports those changes. Restart them after a switch.
+- Their header bar uses Qt's own Adwaita decoration, whose colors are fixed (white in
+  light style, `#2e2e32` in dark) and cannot be set from outside.
+- Host (non-Flatpak) Qt apps such as OBS and Fedora Media Writer are not themed; OBS
+  has themes of its own.
+
+**GNOME Shell and the screen**
+
+- The Shell theme needs the User Themes extension. Screen Fade, the lock screen image
+  and the Blur my Shell and SearchLightNG colors need Recoolor's own Shell
+  extension; log out and back in once after it is installed or updated.
+- While Recoolor themes the Shell, GNOME's `default` style is stored as
+  `prefer-light`, since GNOME keeps the Shell dark otherwise. Reset puts it back.
+- SearchLightNG's blur can look darker when it shares a Blur my Shell pipeline; give
+  it a pipeline of its own with brightness 1.0.
+- Screen Fade holds the screen for at most 3 seconds, then fades even if an app is
+  still redrawing.
+- The first switch to light after a new palette can take about a second and a half
+  longer, while the lock screen image is tinted for that style.
+- Tinted wallpapers are made at up to 4K (3840 × 2160); larger images are scaled
+  down first.
+
+**Login screen**
+
+- Only through GDM Settings (a Flatpak). The one-time **Set Up…** link into
+  `/usr/local/share/themes` needs `sudo`; Recoolor itself never writes system files.
+- The login screen shows one palette: the style that was on screen when you pressed
+  Apply in GDM Settings. It does not follow light/dark or later palette changes until
+  you apply there again.
+- A GNOME Shell update replaces the login stylesheet, so the login screen goes back
+  to GNOME's look until you apply again. To remove it, reset in GDM Settings.
+
+**Apps with themes of their own**
+
+- Firefox and Thunderbird need `toolkit.legacyUserProfileCustomizations.stylesheets`
+  and a theme that follows the system, and one restart. Only the browser is themed,
+  not websites. Recoolor waits until a window has been open for 10 seconds before
+  restarting it, so a fresh start is not mistaken for a crash.
+- Chrome needs its GTK mode and a restart. Slack takes its colors by hand.
+- VS Code: with `window.autoDetectColorScheme` on, VS Code ignores the selected
+  theme, so Recoolor skips it until that is off. After a new palette, the first
+  light/dark switch may repaint once.
+- yazi cannot reload its theme while running, so new windows show a change. A
+  `theme.toml` of your own would override any flavor, so it is moved to
+  `theme.toml.recoolor-backup` and comes back on Reset.
+- fish with oh-my-posh: the oh-my-posh config needs a named `palette`, and Recoolor
+  changes the `--config` path on the `oh-my-posh init fish` line of `config.fish`
+  (Reset puts it back).
+- bash: needs a `.bashrc` that reads `~/.bashrc.d` (Fedora's does). A prompt from
+  oh-my-posh or starship is left alone.
+- Ptyxis: when only one palette is applied and Gogh's version of it has both a light
+  and a dark side, Recoolor generates a palette of its own instead.
+
+**Restart Apps**
+
+- Apps that do not save their session open fresh.
+- An app still running 15 seconds after it was asked to quit is not reopened.
+- Without Recoolor's Shell extension, only the browsers can be restarted.
+
+**Palettes**
+
+A few of Recoolor's own palettes keep their authors' colors even where they fall
+just under a target, rather than drifting from the original:
+
+- Tokyo Night Day: green used as text is 4.48:1, under 4.5:1.
+- Catppuccin Latte, Everforest Light and Solarized Light: some fills are under 3:1
+  on the window.
+- Solarized Dark: text on cards is 4.11:1.
 
 ## When something goes wrong
 

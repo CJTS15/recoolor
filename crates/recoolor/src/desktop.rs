@@ -202,6 +202,36 @@ fn session_call(
         .map_err(|e| e.to_string())
 }
 
+/// Waits, two seconds at most, until the Shell has turned extension `uuid` off after
+/// `set_extension_enabled`. Turning one off also turns off and on the extensions
+/// enabled after it, and User Themes reloads every extension stylesheet as it does,
+/// so files removed before then are missed.
+pub fn wait_extension_off(uuid: &str) {
+    // ExtensionState.ACTIVE (ENABLED before GNOME 46).
+    const ACTIVE: f64 = 1.0;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while std::time::Instant::now() < deadline {
+        let state = session_call(
+            "org.gnome.Shell.Extensions",
+            "/org/gnome/Shell/Extensions",
+            "org.gnome.Shell.Extensions",
+            "GetExtensionInfo",
+            Some((uuid,).to_variant()),
+        )
+        .ok()
+        .and_then(|reply| {
+            glib::VariantDict::new(Some(&reply.child_value(0)))
+                .lookup::<f64>("state")
+                .ok()
+                .flatten()
+        });
+        if state != Some(ACTIVE) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
 /// Whether something owns `name` on the session bus. Checked before calling an
 /// app that is D-Bus activatable, so the call does not start it.
 fn running(name: &str) -> bool {

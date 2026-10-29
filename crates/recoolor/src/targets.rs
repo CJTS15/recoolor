@@ -870,6 +870,7 @@ fn set_fade(dirs: &Dirs, on: bool) -> Result<(), String> {
         // Only take it out of the enabled list if Recoolor put it there.
         if shell_fade::is_installed(&dirs.data) {
             desktop::set_extension_enabled(shell_fade::UUID, false)?;
+            desktop::wait_extension_off(shell_fade::UUID);
         }
         shell_fade::remove(&dirs.data)
             .map(|_| ())
