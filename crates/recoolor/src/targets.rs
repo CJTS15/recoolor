@@ -10,8 +10,8 @@ use gtk::gio;
 use gtk::gio::prelude::*;
 use gtk::glib;
 use recoolor_core::apps::{
-    self, btop, firefox, fish, gtksourceview, kdeglobals, ohmyposh, ptyxis, shell_fade, spotifast,
-    vscode, yazi,
+    self, bash, btop, firefox, fish, gtksourceview, kdeglobals, ohmyposh, ptyxis, shell_fade,
+    spotifast, vscode, yazi,
 };
 use recoolor_core::palette::{self, Palette};
 use recoolor_core::state::{self, State};
@@ -93,6 +93,8 @@ pub struct Extras {
     pub fish: bool,
     /// yazi's flavors and `theme.toml`.
     pub yazi: bool,
+    /// bash's prompt (`~/.bashrc.d/recoolor.sh`).
+    pub bash: bool,
     pub btop: bool,
     pub vscode: bool,
     pub firefox: bool,
@@ -139,6 +141,7 @@ pub fn current(dirs: &Dirs) -> Extras {
         ptyxis: state.ptyxis_previous.is_some(),
         fish: apps::is_ours(&fish::path(&dirs.config)),
         yazi: apps::is_ours(&yazi::theme_path(&dirs.config)),
+        bash: desktop::home().is_ok_and(|h| apps::is_ours(&bash::path(&h))),
         btop: state.btop_previous.is_some(),
         vscode: state.vscode_previous.is_some()
             && desktop::home().is_ok_and(|h| vscode::extension_installed(&h)),
@@ -315,6 +318,7 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
         ),
         ("fish", set_fish(dirs, &mut state, when(extras.fish))),
         ("yazi", set_yazi(dirs, when(extras.yazi))),
+        ("bash", set_bash(when(extras.bash).map(|l| l.now))),
         (
             "btop",
             set_btop(dirs, &mut state, when(extras.btop).map(|l| l.now)),
@@ -654,6 +658,18 @@ fn set_yazi(dirs: &Dirs, look: Option<Look>) -> Result<(), String> {
         None => yazi::remove(&dirs.config).map(|_| ()),
     }
     .map_err(|e| e.to_string())
+}
+
+fn set_bash(palette: Option<&Palette>) -> Result<(), String> {
+    let home = desktop::home()?;
+    let Some(palette) = palette else {
+        return bash::remove(&home).map(|_| ()).map_err(|e| e.to_string());
+    };
+    let bashrc = std::fs::read_to_string(home.join(".bashrc")).unwrap_or_default();
+    if let Some(why) = bash::unusable(&bashrc) {
+        return Err(format!("left alone: {why}"));
+    }
+    bash::write(&home, palette).map_err(|e| e.to_string())
 }
 
 fn set_fish(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result<(), String> {
