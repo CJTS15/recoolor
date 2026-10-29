@@ -87,8 +87,9 @@ fn user_content(profile: &Path) -> PathBuf {
     profile.join("chrome/userContent.css")
 }
 
-/// The palette for Firefox's own pages only (`about:`), never websites: the accent,
-/// and the button hover and pressed colors, which Firefox's "Nova" design makes violet.
+/// The palette for Firefox's own pages only (`about:`), never websites: the page,
+/// card and text colors (the new tab is otherwise white or grey), the accent, and the
+/// button hover and pressed colors, which Firefox's "Nova" design makes violet.
 pub fn render_content(palette: &Palette, dark: Option<&Palette>) -> String {
     let rules = match dark {
         None => content_variables(palette),
@@ -105,13 +106,27 @@ pub fn render_content(palette: &Palette, dark: Option<&Palette>) -> String {
 }
 
 fn content_variables(palette: &Palette) -> String {
-    let r = crate::css::Roles::new(palette);
-    format!(
-        ":root {{\n  --color-accent-primary: {} !important;\n  \
-         --button-background-color-hover: {} !important;\n  \
-         --button-background-color-active: {} !important;\n}}\n",
-        palette.colors.accent, r.hover, r.active
-    )
+    let (c, r) = (&palette.colors, crate::css::Roles::new(palette));
+    let mut css = String::from(":root {\n");
+    for (name, color) in [
+        // Firefox's design tokens, which its pages draw from.
+        ("--background-color-canvas", c.base),
+        ("--background-color-box", r.card),
+        ("--card-background-color", r.card),
+        ("--text-color", c.text),
+        ("--text-color-deemphasized", c.subtext),
+        ("--color-accent-primary", c.accent),
+        ("--button-background-color-hover", r.hover),
+        ("--button-background-color-active", r.active),
+        // The new tab's own, in case it sets them itself.
+        ("--newtab-background-color", c.base),
+        ("--newtab-background-color-secondary", r.card),
+        ("--newtab-text-primary-color", c.text),
+    ] {
+        let _ = writeln!(css, "  {name}: {color} !important;");
+    }
+    css.push_str("}\n");
+    css
 }
 
 /// `palette`'s colors, or with `dark`, the light/dark pair: `palette` by
@@ -326,6 +341,10 @@ mod tests {
         assert!(dark.contains(&format!(
             "--button-background-color-hover: {hover} !important;"
         )));
+        // The new tab: the palette's window color, light and dark.
+        let base =
+            |p: &Palette| format!("--newtab-background-color: {} !important;", p.colors.base);
+        assert!(css.contains(&base(&latte)) && dark.contains(&base(&mocha)));
         // The window frame gets Nova's button colors too.
         assert!(
             render(&mocha, None).contains(&format!("--button-background-color-hover: {hover}"))
