@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.1 — 2026-11-04
+
+- Supports GNOME 51: Recoolor's Shell extension (Screen Fade, the lock screen
+  image, the Blur my Shell and SearchLightNG colors) was marked out of date there.
+  Log out and back in once after updating.
+
 ## 1.5.0 — 2026-10-29
 
 Window:
