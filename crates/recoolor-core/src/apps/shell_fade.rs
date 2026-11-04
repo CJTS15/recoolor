@@ -8,7 +8,7 @@
 //! - Lock screen image: GNOME draws the lock screen from the desktop wallpaper and
 //!   has no setting of its own, so the extension replaces
 //!   `UnlockDialog._createBackground` (a private method; recheck after GNOME
-//!   upgrades, tested on GNOME Shell 50) to draw Recoolor's image instead.
+//!   upgrades, tested on GNOME Shell 50 and 51) to draw Recoolor's image instead.
 //!
 //! The extension reads its choices from [`config_path`] each time the screen locks.
 
@@ -28,7 +28,7 @@ const METADATA: &str = r#"{
   "uuid": "recoolor@cjts15.github.io",
   "name": "Recoolor",
   "session-modes": ["user", "unlock-dialog"],
-  "shell-version": ["47", "48", "49", "50"],
+  "shell-version": ["47", "48", "49", "50", "51"],
   "url": "https://github.com/CJTS15/recoolor"
 }
 "#;
