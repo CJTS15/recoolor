@@ -6,7 +6,7 @@ themes GTK and libadwaita apps, GNOME Shell, the wallpaper and lock screen, Qt
 apps, and apps with themes of their own such as Firefox, VS Code and the terminal.
 One Reset puts everything back the way it was.
 
-Requires GNOME 47 or newer (GTK 4.16, libadwaita 1.6). Built and tested on GNOME 50.
+Requires GNOME 47 or newer (GTK 4.16, libadwaita 1.6). Built and tested on GNOME 50 and 51.
 
 ## Install
 
