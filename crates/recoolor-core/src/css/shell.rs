@@ -76,9 +76,10 @@ pub fn switcher_labels(palette: &Palette) -> String {
     )
 }
 
-/// GNOME keeps the Alt+Tab and workspace switchers dark in light style too;
+/// GNOME keeps its on-screen popups dark in light style too: Alt+Tab, the
+/// workspace switcher, the volume and brightness OSD and the resize popup.
 /// Recoolor makes them follow the style, with the palette's text and a highlight
-/// to match.
+/// to match. The screenshot toolbar stays dark, its buttons drawn for it.
 /// Important, to outrank the switcher's own rules for each item state.
 fn light_switcher(palette: &Palette) -> String {
     if palette.variant != Variant::Light {
@@ -91,23 +92,20 @@ fn light_switcher(palette: &Palette) -> String {
          .switcher-list, .switcher-list .item-box, .switcher-arrow {{ color: {} !important; }}\n\
          .switcher-list .item-box:hover, .switcher-list .item-box:focus, \
          .switcher-list .item-box:selected {{ background-color: rgba({}, {}, {}, 0.12) !important; }}\n\
-         .workspace-switcher {{ background-color: {} !important; }}\n\
+         .workspace-switcher, .osd-window, .resize-popup {{ background-color: {} !important; color: {} !important; }}\n\
          .ws-switcher-indicator {{ background-color: rgba({}, {}, {}, 0.38) !important; }}\n\
          .ws-switcher-indicator:active {{ background-color: {} !important; }}\n",
-        c.base, t, t.r, t.g, t.b, c.base, t.r, t.g, t.b, t
+        c.base, t, t.r, t.g, t.b, c.base, t, t.r, t.g, t.b, t
     )
 }
 
 /// The volume and brightness OSD's bar in the accent, as quick settings' sliders
-/// are, over a track in the OSD's light text (GNOME keeps the OSD dark in both
-/// styles). Important, to outrank Blur my Shell's light-surface rule that
-/// `shell_blur` moves in, which assumes a light OSD.
+/// are, over a track in the OSD's text (the OSD follows the style, see
+/// `light_switcher`). Important, to outrank Blur my Shell's surface rules that
+/// `shell_blur` moves in.
 fn osd_level(palette: &Palette) -> String {
     let c = &palette.colors;
-    let fg = match palette.variant {
-        Variant::Light => c.base,
-        Variant::Dark => c.text,
-    };
+    let fg = c.text;
     format!(
         "\n.osd-window .level {{ -barlevel-active-background-color: {} !important; \
          -barlevel-background-color: rgba({}, {}, {}, 0.3) !important; }}\n",
@@ -202,11 +200,8 @@ pub fn shell_popups(palette: &Palette, bms_css: &str) -> String {
                 }
                 let card = inner == ".quick-toggle-menu"
                     || inner.starts_with(".message") && !inner.contains(".message-media-control");
-                let always_dark = palette.variant == Variant::Light
-                    && matches!(
-                        inner,
-                        ".osd-window" | ".resize-popup" | ".screenshot-ui-panel"
-                    );
+                let always_dark =
+                    palette.variant == Variant::Light && inner == ".screenshot-ui-panel";
                 let color = match () {
                     _ if !fill => c.text,
                     _ if always_dark => c.text,
@@ -626,12 +621,18 @@ mod tests {
         assert!(!css.contains("modal-dialog"));
         assert!(!css.contains("quick-toggle "));
         assert_eq!(shell_popups(&mocha, ""), "");
-        // OSDs stay dark in light style: the palette's text (#4c4f69), not its base.
+        // OSDs follow light style: the palette's base (#eff1f5); the screenshot
+        // toolbar stays dark, in its text (#4c4f69).
         let latte = palette("catppuccin-latte");
         let osd = ".bms-popup-surface-light .osd-window { background: rgba(255, 255, 255, 0.65) !important; }";
         assert!(
             shell_popups(&latte, osd)
-                .contains("osd-window { background-color: rgba(76, 79, 105, 0.65)")
+                .contains("osd-window { background-color: rgba(239, 241, 245, 0.65)")
+        );
+        let panel = ".bms-popup-surface-light .screenshot-ui-panel { background: rgba(255, 255, 255, 0.65) !important; }";
+        assert!(
+            shell_popups(&latte, panel)
+                .contains("screenshot-ui-panel { background-color: rgba(76, 79, 105, 0.65)")
         );
     }
 
@@ -641,18 +642,20 @@ mod tests {
         let css = shell(&latte, "");
         assert!(css.contains(&format!(
             ".osd-window .level {{ -barlevel-active-background-color: {} !important; \
-             -barlevel-background-color: rgba(239, 241, 245, 0.3) !important; }}",
+             -barlevel-background-color: rgba(76, 79, 105, 0.3) !important; }}",
             latte.colors.accent
         )));
     }
 
     #[test]
-    fn alt_tab_switcher_follows_the_style() {
+    fn osds_follow_the_style() {
         let latte = palette("catppuccin-latte");
         let css = shell(&latte, "");
         assert!(css.contains(".switcher-list { background-color: #eff1f5 !important; }"));
         assert!(css.contains(".switcher-arrow { color: #4c4f69 !important; }"));
-        assert!(css.contains(".workspace-switcher { background-color: #eff1f5 !important; }"));
+        assert!(css.contains(
+            ".workspace-switcher, .osd-window, .resize-popup { background-color: #eff1f5 !important; color: #4c4f69 !important; }"
+        ));
         assert!(
             css.contains(".ws-switcher-indicator:active { background-color: #4c4f69 !important; }")
         );
