@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.2 — 2026-11-06
+
+- GNOME's on-screen popups follow light style: the workspace switcher, the
+  volume, brightness and other OSDs, and the window resize popup take the
+  palette's window and text colors, as Alt+Tab does, with or without Blur my
+  Shell. The level bar keeps the accent over a track in the text color.
+- libadwaita 1.10 (GNOME 51): banners take the palette's mid tone instead of a
+  fixed grey.
+
 ## 1.5.1 — 2026-11-04
 
 - Supports GNOME 51: Recoolor's Shell extension (Screen Fade, the lock screen
