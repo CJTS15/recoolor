@@ -76,8 +76,9 @@ pub fn switcher_labels(palette: &Palette) -> String {
     )
 }
 
-/// GNOME keeps the Alt+Tab switcher dark in light style too; Recoolor makes it
-/// follow the style, with the palette's text and a highlight to match.
+/// GNOME keeps the Alt+Tab and workspace switchers dark in light style too;
+/// Recoolor makes them follow the style, with the palette's text and a highlight
+/// to match.
 /// Important, to outrank the switcher's own rules for each item state.
 fn light_switcher(palette: &Palette) -> String {
     if palette.variant != Variant::Light {
@@ -89,8 +90,11 @@ fn light_switcher(palette: &Palette) -> String {
         ".switcher-list {{ background-color: {} !important; }}\n\
          .switcher-list, .switcher-list .item-box, .switcher-arrow {{ color: {} !important; }}\n\
          .switcher-list .item-box:hover, .switcher-list .item-box:focus, \
-         .switcher-list .item-box:selected {{ background-color: rgba({}, {}, {}, 0.12) !important; }}\n",
-        c.base, t, t.r, t.g, t.b
+         .switcher-list .item-box:selected {{ background-color: rgba({}, {}, {}, 0.12) !important; }}\n\
+         .workspace-switcher {{ background-color: {} !important; }}\n\
+         .ws-switcher-indicator {{ background-color: rgba({}, {}, {}, 0.38) !important; }}\n\
+         .ws-switcher-indicator:active {{ background-color: {} !important; }}\n",
+        c.base, t, t.r, t.g, t.b, c.base, t.r, t.g, t.b, t
     )
 }
 
@@ -201,10 +205,7 @@ pub fn shell_popups(palette: &Palette, bms_css: &str) -> String {
                 let always_dark = palette.variant == Variant::Light
                     && matches!(
                         inner,
-                        ".osd-window"
-                            | ".workspace-switcher"
-                            | ".resize-popup"
-                            | ".screenshot-ui-panel"
+                        ".osd-window" | ".resize-popup" | ".screenshot-ui-panel"
                     );
                 let color = match () {
                     _ if !fill => c.text,
@@ -651,6 +652,12 @@ mod tests {
         let css = shell(&latte, "");
         assert!(css.contains(".switcher-list { background-color: #eff1f5 !important; }"));
         assert!(css.contains(".switcher-arrow { color: #4c4f69 !important; }"));
+        assert!(css.contains(".workspace-switcher { background-color: #eff1f5 !important; }"));
+        assert!(
+            css.contains(".ws-switcher-indicator:active { background-color: #4c4f69 !important; }")
+        );
+        let ws = ".bms-popup-surface-light .workspace-switcher { background: rgba(255, 255, 255, 0.65) !important; }";
+        assert!(shell_popups(&latte, ws).contains("rgba(239, 241, 245, 0.65)"));
         let switcher = ".bms-popup-surface-light .switcher-list { background: rgba(255, 255, 255, 0.65) !important; }";
         assert!(shell_popups(&latte, switcher).contains("rgba(239, 241, 245, 0.65)"));
         // Dark style keeps GNOME's own.

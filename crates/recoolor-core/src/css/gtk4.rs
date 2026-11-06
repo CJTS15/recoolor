@@ -36,10 +36,12 @@ pub fn gtk4_pair(light: &Palette, dark: &Palette) -> String {
 /// to be transparent (and a user stylesheet outranks libadwaita's regardless of
 /// specificity). libadwaita's toasts are a fixed grey bubble with white text in
 /// both styles, no named color involved, so they get Recoolor's own variables.
+/// Banners (libadwaita 1.10) mix a fixed grey of their own into the window color.
 const PLAIN_GTK4: &str = "
 window.background { background-color: var(--window-bg-color); color: var(--window-fg-color); }
 headerbar.titlebar { background: var(--headerbar-bg-color); color: var(--headerbar-fg-color); }
 toast { background: var(--recoolor-toast-bg-color); color: var(--recoolor-toast-fg-color); }
+banner { --banner-color: var(--recoolor-banner-color); }
 ";
 
 /// libadwaita's named colors as `@define-color`, which adw-gtk3 reads in GTK3 too.
@@ -70,6 +72,8 @@ fn colors(palette: &Palette) -> String {
     };
     let _ = writeln!(css, "  --recoolor-toast-bg-color: {toast_bg};");
     let _ = writeln!(css, "  --recoolor-toast-fg-color: {toast_fg};");
+    // The palette's mid tone, where Adwaita's banners use a mid grey.
+    let _ = writeln!(css, "  --recoolor-banner-color: {};", c.overlay);
     css.push_str("}\n");
     css
 }
@@ -226,6 +230,8 @@ mod tests {
         // Toasts: a dark bubble in both, from each half's palette.
         assert!(light_part.contains("--recoolor-toast-bg-color: #4c4f69;"));
         assert!(dark_part.contains("--recoolor-toast-bg-color: #313244;"));
+        assert!(light_part.contains("--recoolor-banner-color: #9ca0b0;"));
+        assert!(dark_part.contains("--recoolor-banner-color: #6c7086;"));
         assert!(css.contains("toast { background: var(--recoolor-toast-bg-color);"));
     }
 }
