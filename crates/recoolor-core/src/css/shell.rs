@@ -79,7 +79,8 @@ pub fn switcher_labels(palette: &Palette) -> String {
 /// GNOME keeps its on-screen popups dark in light style too: Alt+Tab, the
 /// workspace switcher, the volume and brightness OSD and the resize popup.
 /// Recoolor makes them follow the style, with the palette's text and a highlight
-/// to match. The screenshot toolbar stays dark, its buttons drawn for it.
+/// to match. The screenshot toolbar stays dark, its buttons drawn for it, unless
+/// Blur my Shell's light style draws them for a light one (see `shell_popups`).
 /// Important, to outrank the switcher's own rules for each item state.
 fn light_switcher(palette: &Palette) -> String {
     if palette.variant != Variant::Light {
@@ -200,11 +201,8 @@ pub fn shell_popups(palette: &Palette, bms_css: &str) -> String {
                 }
                 let card = inner == ".quick-toggle-menu"
                     || inner.starts_with(".message") && !inner.contains(".message-media-control");
-                let always_dark =
-                    palette.variant == Variant::Light && inner == ".screenshot-ui-panel";
                 let color = match () {
                     _ if !fill => c.text,
-                    _ if always_dark => c.text,
                     // As apps' cards: surface in dark style, lighter than the window in light.
                     _ if card => Roles::new(palette).card,
                     _ => c.base,
@@ -621,8 +619,8 @@ mod tests {
         assert!(!css.contains("modal-dialog"));
         assert!(!css.contains("quick-toggle "));
         assert_eq!(shell_popups(&mocha, ""), "");
-        // OSDs follow light style: the palette's base (#eff1f5); the screenshot
-        // toolbar stays dark, in its text (#4c4f69).
+        // OSDs follow light style: the palette's base (#eff1f5). So does the
+        // screenshot toolbar, whose buttons Blur my Shell draws for a light panel.
         let latte = palette("catppuccin-latte");
         let osd = ".bms-popup-surface-light .osd-window { background: rgba(255, 255, 255, 0.65) !important; }";
         assert!(
@@ -632,7 +630,7 @@ mod tests {
         let panel = ".bms-popup-surface-light .screenshot-ui-panel { background: rgba(255, 255, 255, 0.65) !important; }";
         assert!(
             shell_popups(&latte, panel)
-                .contains("screenshot-ui-panel { background-color: rgba(76, 79, 105, 0.65)")
+                .contains("screenshot-ui-panel { background-color: rgba(239, 241, 245, 0.65)")
         );
     }
 
