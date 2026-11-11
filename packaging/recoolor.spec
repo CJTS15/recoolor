@@ -4,7 +4,7 @@
 %global debug_package %{nil}
 
 Name:           recoolor
-Version:        1.5.2
+Version:        1.5.3
 Release:        1%{?dist}
 Summary:        Recolor GNOME and its apps with one palette
 License:        GPL-3.0-or-later
@@ -64,6 +64,10 @@ appstreamcli validate --no-net %{buildroot}%{_metainfodir}/%{app_id}.metainfo.xm
 %{_datadir}/icons/hicolor/symbolic/apps/%{app_id}-symbolic.svg
 
 %changelog
+* Wed Nov 11 2026 CJ Sabijon <cjsabijon@gmail.com> - 1.5.3-1
+- Fix locking freezing the desktop on GNOME 51; readable screenshot toolbar
+  in light style with Blur my Shell.
+
 * Fri Nov 06 2026 CJ Sabijon <cjsabijon@gmail.com> - 1.5.2-1
 - OSDs follow light style; banners in the palette on libadwaita 1.10.
 

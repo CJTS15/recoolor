@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.3 — 2026-11-11
+
+- Fixed: on GNOME 51, locking the screen (Super+L, idle lock or suspend) with a
+  Lock Screen image set could leave the desktop unresponsive. GNOME 51 removed a
+  function the lock screen image used; the image is now drawn another way, and
+  any error falls back to GNOME's own background. Log out and back in once after
+  updating.
+- Fixed: in light style with Blur my Shell, the screenshot toolbar's labels and
+  buttons were dark on a dark panel. The panel now takes the palette's window
+  color, like the other on-screen popups.
+
 ## 1.5.2 — 2026-11-06
 
 - GNOME's on-screen popups follow light style: the workspace switcher, the
