@@ -182,13 +182,16 @@ pub fn apply(
         desktop::screen_fade("Freeze");
     }
     let cfg = GtkConfig::new(&dirs.config).with_adw_gtk3(extras.adw_gtk3);
-    let applied = write_gtk(&cfg, look, dark_now).map(|()| {
+    // The window, the command line and the watcher may all get here at once: the
+    // lock covers the GTK files and the extras together.
+    let applied = state::lock(&dirs.state).and_then(|lock| {
+        write_gtk(&cfg, look, dark_now)?;
         log::info(&format!(
             "applied {} (accent {}) with {extras:?}",
             choice.name(),
             accent.as_deref().unwrap_or("palette's own")
         ));
-        set_extras(dirs, extras, Some(look))
+        Ok(set_extras(dirs, &lock, extras, Some(look)))
     });
     if extras.fade {
         desktop::screen_fade("Fade");
@@ -230,15 +233,23 @@ fn write_gtk(cfg: &GtkConfig, look: Look, dark_now: bool) -> Result<(), ApplyErr
 /// restored) and every problem met on the way.
 pub fn reset(dirs: &Dirs) -> (Vec<(Toolkit, RestoreOutcome)>, Vec<String>) {
     let mut problems = Vec::new();
+    // First, so the watcher does not wait on the lock to put everything back.
+    if let Err(e) = desktop::set_watch(&dirs.config, false) {
+        problems.push(e);
+    }
+    let lock = match state::lock(&dirs.state) {
+        Ok(lock) => lock,
+        Err(e) => {
+            problems.push(format!("left everything alone: {e}"));
+            return (Vec::new(), problems);
+        }
+    };
     let outcomes = GtkConfig::new(&dirs.config).restore().unwrap_or_else(|e| {
         problems.push(e.to_string());
         Vec::new()
     });
-    if let Err(e) = desktop::set_watch(&dirs.config, false) {
-        problems.push(e);
-    }
-    problems.extend(set_extras(dirs, &Extras::default(), None));
-    if let Err(e) = remember_login_screen(dirs, false) {
+    problems.extend(set_extras(dirs, &lock, &Extras::default(), None));
+    if let Err(e) = set_login_screen(dirs, false) {
         problems.push(e);
     }
     log::info("reset");
@@ -288,14 +299,15 @@ impl std::ops::DerefMut for Record {
     }
 }
 
-/// `look` is what to show, or `None` to undo everything.
-fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
+/// `look` is what to show, or `None` to undo everything. Only under the state
+/// lock, which `_lock` proves the caller holds.
+fn set_extras(
+    dirs: &Dirs,
+    _lock: &std::fs::File,
+    extras: &Extras,
+    look: Option<Look>,
+) -> Vec<String> {
     let when = |on: bool| look.filter(|_| on);
-    // The window, the command line and the watcher may all get here at once.
-    let _lock = match state::lock(&dirs.state) {
-        Ok(lock) => lock,
-        Err(e) => return vec![format!("left the extras alone: {e}")],
-    };
     let path = state::path(&dirs.state);
     let mut state = match State::load(&path) {
         Ok(state) => Record::new(state, path),
@@ -1138,6 +1150,11 @@ pub fn login_screen_hint(dirs: &Dirs, choice: Choice, extras: &Extras) -> Option
 /// Records whether Recoolor's theme went to GDM Settings.
 pub fn remember_login_screen(dirs: &Dirs, sent: bool) -> Result<(), String> {
     let _lock = state::lock(&dirs.state).map_err(|e| e.to_string())?;
+    set_login_screen(dirs, sent)
+}
+
+/// [`remember_login_screen`] for a caller that holds the state lock.
+fn set_login_screen(dirs: &Dirs, sent: bool) -> Result<(), String> {
     let path = state::path(&dirs.state);
     let mut state = State::load(&path).map_err(|e| e.to_string())?;
     state.login_screen = sent;
@@ -1228,6 +1245,9 @@ fn light_shell_first(dirs: &Dirs, settings: &gio::Settings) -> bool {
 }
 
 fn sync(dirs: &Dirs, settings: &gio::Settings) -> Result<(), String> {
+    // Waits for an Apply in the window to finish, then reads what it left, so
+    // extras it just turned off are not turned back on.
+    let lock = state::lock(&dirs.state).map_err(|e| e.to_string())?;
     let dark_now = desktop::prefers_dark(settings);
     let accent = desktop::accent_choice(settings);
     let extras = current(dirs);
@@ -1254,7 +1274,7 @@ fn sync(dirs: &Dirs, settings: &gio::Settings) -> Result<(), String> {
     let look = look(&tinted, dark_now);
     write_gtk(&cfg, look, dark_now).map_err(|e| e.to_string())?;
 
-    let problems = set_extras(dirs, &extras, Some(look));
+    let problems = set_extras(dirs, &lock, &extras, Some(look));
     for p in &problems {
         log::error(&format!("recoolor watch: {p}"));
     }

@@ -9,6 +9,7 @@
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::css;
 use crate::palette::Palette;
@@ -248,15 +249,21 @@ pub(crate) fn exists(path: &Path) -> Result<bool, ApplyError> {
 }
 
 /// Writes through a temp file and a rename, so apps starting mid-write never read
-/// half a stylesheet.
+/// half a stylesheet. A symlink (a dotfiles manager's link to `settings.json` or
+/// `config.fish`) is written through to its target, so the link stays.
 pub(crate) fn write_atomic(path: &Path, contents: &str) -> Result<(), ApplyError> {
+    let path = &resolve_links(path);
     let dir = path.parent().expect("path has a parent");
     fs::create_dir_all(dir).map_err(io_err(dir))?;
     let name = path
         .file_name()
         .expect("path has a file name")
         .to_string_lossy();
-    let tmp = dir.join(format!(".{name}.recoolor-tmp"));
+    // Unique per process and call: the window, the watcher and the command line
+    // can write the same file at once, and must not share a temp file.
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp = dir.join(format!(".{name}.{}-{n}.recoolor-tmp", std::process::id()));
     let result = (|| {
         let mut file = fs::File::create(&tmp)?;
         file.write_all(contents.as_bytes())?;
@@ -267,6 +274,25 @@ pub(crate) fn write_atomic(path: &Path, contents: &str) -> Result<(), ApplyError
         let _ = fs::remove_file(&tmp);
     }
     result.map_err(io_err(path))
+}
+
+/// `path` with symlinks followed to the file they name, which need not exist yet.
+/// Stops after 40 links, as the kernel does, and gives up on a loop by returning
+/// the last link.
+fn resolve_links(path: &Path) -> PathBuf {
+    let mut path = path.to_owned();
+    for _ in 0..40 {
+        match fs::read_link(&path) {
+            Ok(target) => {
+                path = match path.parent() {
+                    Some(dir) => dir.join(target),
+                    None => target,
+                };
+            }
+            Err(_) => break,
+        }
+    }
+    path
 }
 
 /// Reads a text file; a missing one is empty.
@@ -282,5 +308,39 @@ pub(crate) fn io_err(path: &Path) -> impl FnOnce(io::Error) -> ApplyError + '_ {
     move |source| ApplyError::Io {
         path: path.to_owned(),
         source,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn writes_through_symlinks_and_keeps_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let dotfiles = dir.path().join("dotfiles");
+        fs::create_dir(&dotfiles).unwrap();
+        fs::write(dotfiles.join("settings.json"), "{}").unwrap();
+        let config = dir.path().join("config");
+        fs::create_dir(&config).unwrap();
+        // A relative link, as stow makes, and a dangling one.
+        let link = config.join("settings.json");
+        std::os::unix::fs::symlink("../dotfiles/settings.json", &link).unwrap();
+        let dangling = config.join("new.conf");
+        std::os::unix::fs::symlink("../dotfiles/new.conf", &dangling).unwrap();
+
+        write_atomic(&link, "{ \"a\": 1 }").unwrap();
+        write_atomic(&dangling, "x").unwrap();
+
+        assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
+        assert_eq!(
+            fs::read_to_string(dotfiles.join("settings.json")).unwrap(),
+            "{ \"a\": 1 }"
+        );
+        assert!(fs::symlink_metadata(&dangling).unwrap().is_symlink());
+        assert_eq!(fs::read_to_string(dotfiles.join("new.conf")).unwrap(), "x");
+        // No temp files left behind.
+        assert_eq!(fs::read_dir(&config).unwrap().count(), 2);
+        assert_eq!(fs::read_dir(&dotfiles).unwrap().count(), 2);
     }
 }

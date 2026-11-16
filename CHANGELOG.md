@@ -14,6 +14,11 @@
 - Fixed: restarting Firefox or Thunderbird could leave them closed: one window
   that quit early stopped the others from coming back, and the Flatpak builds
   are now reopened through their launcher.
+- Fixed: a config that is a symlink (dotfiles managed with stow or chezmoi) is
+  written through to its target instead of being replaced by a plain file.
+- Fixed: the window, the command line and the watch service no longer write
+  over each other; the watcher could turn an app back on that Apply had just
+  turned off.
 
 ## 1.5.3 — 2026-11-11
 
