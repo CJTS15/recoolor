@@ -11,6 +11,9 @@
 - Fixed: the settings Reset puts back (wallpaper, icons, Shell theme, Dark
   Style and the rest) are saved before Recoolor changes them, not after
   everything, so an Apply cut short no longer loses them.
+- Fixed: restarting Firefox or Thunderbird could leave them closed: one window
+  that quit early stopped the others from coming back, and the Flatpak builds
+  are now reopened through their launcher.
 
 ## 1.5.3 — 2026-11-11
 
