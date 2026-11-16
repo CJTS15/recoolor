@@ -53,8 +53,9 @@ window adapts: one column when narrow, four cards per line when maximized.
 - **Restart Apps:** apps read their theme when they start. After a new palette,
   Recoolor lists the open apps that need a restart and restarts the ones you tick:
   each quits the way its own Quit does, saving its session, and comes back as it
-  was. Files and Calendar keep running in the background, so Recoolor restarts
-  those by itself.
+  was. Files and Calendar keep running in the background after their windows
+  close, so the list offers those too; nothing restarts unless you tick it. Reset
+  offers the same list.
 
 The same works from the command line:
 

@@ -188,12 +188,7 @@ pub fn apply(
             choice.name(),
             accent.as_deref().unwrap_or("palette's own")
         ));
-        let mut problems = Vec::new();
-        if let Err(e) = desktop::restart_background_apps() {
-            problems.push(e);
-        }
-        problems.extend(set_extras(dirs, extras, Some(look)));
-        problems
+        set_extras(dirs, extras, Some(look))
     });
     if extras.fade {
         desktop::screen_fade("Fade");
@@ -240,9 +235,6 @@ pub fn reset(dirs: &Dirs) -> (Vec<(Toolkit, RestoreOutcome)>, Vec<String>) {
         Vec::new()
     });
     if let Err(e) = desktop::set_watch(&dirs.config, false) {
-        problems.push(e);
-    }
-    if let Err(e) = desktop::restart_background_apps() {
         problems.push(e);
     }
     problems.extend(set_extras(dirs, &Extras::default(), None));
