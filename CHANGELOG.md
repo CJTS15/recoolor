@@ -5,6 +5,9 @@
 - Fixed: Recoolor and Reset no longer quit Files and Calendar without asking,
   closing their windows. They are in the Restart Apps list instead, also when
   they only run in the background, and Reset shows the list too.
+- Fixed: VS Code kept its own theme when `settings.json` had a glob such as
+  `"**/*.log"` before `workbench.colorTheme`; Recoolor added a second theme
+  key that VS Code ignored.
 
 ## 1.5.3 — 2026-11-11
 
