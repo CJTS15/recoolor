@@ -8,12 +8,23 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 44 is the oldest GNOME Recoolor is tested on here; 45 has GNOME 51.
+        fedora: ["44", "45"]
     # Ubuntu 24.04 ships GTK 4.14 and libadwaita 1.5; Recoolor needs 4.16 and 1.6.
-    container: fedora:44
+    container: fedora:${{ matrix.fedora }}
     steps:
-      - run: dnf install -y git cargo rustfmt clippy gtk4-devel libadwaita-devel xorg-x11-server-Xvfb
+      - run: dnf install -y git cargo rustfmt clippy gtk4-devel libadwaita-devel xorg-x11-server-Xvfb nodejs
       - uses: actions/checkout@v4
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
+      # The Shell extension runs inside GNOME Shell, where a syntax error can break
+      # the lock screen. Node only parses it here; the gi:// imports are not loaded.
+      - name: Check the Shell extension's JavaScript
+        run: |
+          cp crates/recoolor-core/src/apps/shell_fade/extension.js "$RUNNER_TEMP/extension.mjs"
+          node --check "$RUNNER_TEMP/extension.mjs"
       # The GTK CSS parse test needs a display.
       - run: xvfb-run -a cargo test
