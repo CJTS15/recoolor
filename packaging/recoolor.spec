@@ -4,7 +4,7 @@
 %global debug_package %{nil}
 
 Name:           recoolor
-Version:        1.5.3
+Version:        1.5.4
 Release:        1%{?dist}
 Summary:        Recolor GNOME and its apps with one palette
 License:        GPL-3.0-or-later
@@ -64,6 +64,11 @@ appstreamcli validate --no-net %{buildroot}%{_metainfodir}/%{app_id}.metainfo.xm
 %{_datadir}/icons/hicolor/symbolic/apps/%{app_id}-symbolic.svg
 
 %changelog
+* Mon Nov 16 2026 CJ Sabijon <cjsabijon@gmail.com> - 1.5.4-1
+- Fixes from a code review: Files and Calendar restart only when ticked;
+  VS Code settings with globs; state saved before each change; browser
+  restart for Flatpaks; symlinked configs kept; wallpaper orientation.
+
 * Wed Nov 11 2026 CJ Sabijon <cjsabijon@gmail.com> - 1.5.3-1
 - Fix locking freezing the desktop on GNOME 51; readable screenshot toolbar
   in light style with Blur my Shell.

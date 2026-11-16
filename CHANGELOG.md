@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.4 — 2026-11-16
 
 - Fixed: Recoolor and Reset no longer quit Files and Calendar without asking,
   closing their windows. They are in the Restart Apps list instead, also when
