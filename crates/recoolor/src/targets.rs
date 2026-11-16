@@ -245,6 +245,49 @@ pub fn reset(dirs: &Dirs) -> (Vec<(Toolkit, RestoreOutcome)>, Vec<String>) {
     (outcomes, problems)
 }
 
+/// The state file and what it holds. Each `*_previous` is saved as soon as it is
+/// recorded, before the change it guards (`commit`), so a crash or a kill partway
+/// through an apply never loses the user's own values.
+struct Record {
+    state: State,
+    saved: State,
+    path: PathBuf,
+}
+
+impl Record {
+    fn new(state: State, path: PathBuf) -> Self {
+        Self {
+            saved: state.clone(),
+            state,
+            path,
+        }
+    }
+
+    /// Saves the state if it changed since the last save.
+    fn commit(&mut self) -> Result<(), String> {
+        if self.state != self.saved {
+            self.state
+                .save(&self.path)
+                .map_err(|e| format!("cannot record what Recoolor changes: {e}"))?;
+            self.saved = self.state.clone();
+        }
+        Ok(())
+    }
+}
+
+impl std::ops::Deref for Record {
+    type Target = State;
+    fn deref(&self) -> &State {
+        &self.state
+    }
+}
+
+impl std::ops::DerefMut for Record {
+    fn deref_mut(&mut self) -> &mut State {
+        &mut self.state
+    }
+}
+
 /// `look` is what to show, or `None` to undo everything.
 fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
     let when = |on: bool| look.filter(|_| on);
@@ -255,7 +298,7 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
     };
     let path = state::path(&dirs.state);
     let mut state = match State::load(&path) {
-        Ok(state) => state,
+        Ok(state) => Record::new(state, path),
         // Without the record of previous values, changing more could lose them.
         Err(e) => return vec![format!("left the extras alone: {e}")],
     };
@@ -291,7 +334,8 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
         (
             "Icons",
             set_interface(
-                &mut state.icons_previous,
+                &mut state,
+                |s| &mut s.icons_previous,
                 "icon-theme",
                 extras.icons.as_deref(),
             ),
@@ -299,7 +343,8 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
         (
             "Cursors",
             set_interface(
-                &mut state.cursors_previous,
+                &mut state,
+                |s| &mut s.cursors_previous,
                 "cursor-theme",
                 extras.cursors.as_deref(),
             ),
@@ -345,13 +390,13 @@ fn set_extras(dirs: &Dirs, extras: &Extras, look: Option<Look>) -> Vec<String> {
         .filter_map(|(what, result)| result.err().map(|e| format!("{what}: {e}")))
         .collect();
     prune_wallpapers(dirs, extras, look);
-    if let Err(e) = state.save(&path) {
-        problems.push(format!("cannot record what Recoolor changed: {e}"));
+    if let Err(e) = state.commit() {
+        problems.push(e);
     }
     problems
 }
 
-fn set_flatpak(dirs: &Dirs, state: &mut State, on: bool) -> Result<(), String> {
+fn set_flatpak(dirs: &Dirs, state: &mut Record, on: bool) -> Result<(), String> {
     let path = flatpak::overrides_path(&dirs.data);
     if on {
         if !desktop::flatpak_installed() {
@@ -362,6 +407,7 @@ fn set_flatpak(dirs: &Dirs, state: &mut State, on: bool) -> Result<(), String> {
         }
         let added = flatpak::grant(&path).map_err(|e| e.to_string())?;
         state.flatpak_added.extend(added);
+        state.commit()?;
     } else {
         flatpak::revoke(&path, &state.flatpak_added).map_err(|e| e.to_string())?;
         state.flatpak_added.clear();
@@ -369,7 +415,7 @@ fn set_flatpak(dirs: &Dirs, state: &mut State, on: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn set_shell(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Result<(), String> {
+fn set_shell(dirs: &Dirs, state: &mut Record, palette: Option<&Palette>) -> Result<(), String> {
     let Some(palette) = palette else {
         set_popups(dirs, "")?;
         shell::remove(&dirs.data).map_err(|e| e.to_string())?;
@@ -419,6 +465,7 @@ fn set_shell(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resul
     shell::write(&dirs.data, &css).map_err(|e| e.to_string())?;
     let name = settings.string("name").to_string();
     state.shell_previous.get_or_insert_with(|| name.clone());
+    state.commit()?;
     // Selecting the theme loads it; otherwise reload only when there is something new.
     if name != shell::THEME_NAME {
         desktop::set_string(&settings, "name", shell::THEME_NAME)
@@ -432,7 +479,7 @@ fn set_shell(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resul
 /// GNOME keeps the Shell dark unless `color-scheme` is `prefer-light`; `default`
 /// means light apps but a dark Shell, which Blur my Shell then paints dark behind
 /// a light palette. While Recoolor themes the Shell, light mode is `prefer-light`.
-fn set_light_shell(state: &mut State, on: bool) -> Result<(), String> {
+fn set_light_shell(state: &mut Record, on: bool) -> Result<(), String> {
     let settings =
         desktop::interface_settings().ok_or("GNOME's interface settings are not installed")?;
     let current = settings.string("color-scheme");
@@ -441,6 +488,7 @@ fn set_light_shell(state: &mut State, on: bool) -> Result<(), String> {
             state
                 .color_scheme_previous
                 .get_or_insert_with(|| current.to_string());
+            state.commit()?;
             desktop::set_string(&settings, "color-scheme", "prefer-light")?;
         }
     } else if let Some(previous) = state.color_scheme_previous.clone() {
@@ -457,7 +505,7 @@ fn set_light_shell(state: &mut State, on: bool) -> Result<(), String> {
 /// them itself), or puts the user's own background back when neither is set.
 fn set_wallpaper(
     dirs: &Dirs,
-    state: &mut State,
+    state: &mut Record,
     extras: &Extras,
     look: Option<Look>,
 ) -> Result<(), String> {
@@ -523,6 +571,7 @@ fn set_wallpaper(
     state.wallpaper_source_dark = dark.map(str::to_owned);
     state.wallpaper_tint = Some(extras.wallpaper_tint);
     state.wallpaper_strength = Some(extras.wallpaper_strength);
+    state.commit()?;
 
     // Each style's image is tinted with that style's palette.
     let (light_palette, dark_palette) = look.pair.unwrap_or((look.now, look.now));
@@ -560,7 +609,7 @@ fn set_wallpaper(
 
 /// Switches GTK3 to adw-gtk3, in the variant matching the palette in effect, or
 /// puts the user's GTK3 theme back.
-fn set_adw_gtk3(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Result<(), String> {
+fn set_adw_gtk3(dirs: &Dirs, state: &mut Record, palette: Option<&Palette>) -> Result<(), String> {
     let theme = palette.map(|p| match p.variant {
         Variant::Dark => "adw-gtk3-dark",
         Variant::Light => "adw-gtk3",
@@ -573,11 +622,13 @@ fn set_adw_gtk3(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Re
     if theme.is_some() && current.as_deref() == theme {
         return Ok(());
     }
-    set_interface(&mut state.gtk_theme_previous, "gtk-theme", theme)
+    set_interface(state, |s| &mut s.gtk_theme_previous, "gtk-theme", theme)
 }
 
+/// `previous` picks the field in the state that keeps the user's own value.
 fn set_interface(
-    previous: &mut Option<String>,
+    state: &mut Record,
+    previous: fn(&mut State) -> &mut Option<String>,
     key: &str,
     value: Option<&str>,
 ) -> Result<(), String> {
@@ -586,15 +637,14 @@ fn set_interface(
     match value {
         Some(value) => {
             let settings = settings()?;
-            if previous.is_none() {
-                *previous = Some(settings.string(key).to_string());
-            }
+            previous(state).get_or_insert_with(|| settings.string(key).to_string());
+            state.commit()?;
             desktop::set_string(&settings, key, value)
         }
-        None => match previous.clone() {
+        None => match previous(state).clone() {
             Some(value) => {
                 desktop::set_string(&settings()?, key, &value)?;
-                *previous = None;
+                *previous(state) = None;
                 Ok(())
             }
             None => Ok(()),
@@ -602,7 +652,7 @@ fn set_interface(
     }
 }
 
-fn set_ptyxis(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result<(), String> {
+fn set_ptyxis(dirs: &Dirs, state: &mut Record, look: Option<Look>) -> Result<(), String> {
     let Some(look) = look else {
         ptyxis::remove(&dirs.data).map_err(|e| e.to_string())?;
         if let Some(previous) = state.ptyxis_previous.clone() {
@@ -623,6 +673,7 @@ fn set_ptyxis(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result<(), 
         current.clone()
     };
     let previous = state.ptyxis_previous.get_or_insert(recorded).clone();
+    state.commit()?;
     if let Some(name) = ptyxis::builtin(look.now, look.pair) {
         ptyxis::remove(&dirs.data).map_err(|e| e.to_string())?;
         if current == name {
@@ -664,7 +715,7 @@ fn set_bash(palette: Option<&Palette>) -> Result<(), String> {
     bash::write(&home, palette).map_err(|e| e.to_string())
 }
 
-fn set_fish(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result<(), String> {
+fn set_fish(dirs: &Dirs, state: &mut Record, look: Option<Look>) -> Result<(), String> {
     let err = |e: ApplyError| e.to_string();
     let home = desktop::home()?;
     let config_fish = ohmyposh::config_fish(&dirs.config);
@@ -698,7 +749,7 @@ fn set_fish(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result<(), St
 /// With an oh-my-posh line in `config.fish`: writes `recoolor.omp.json` from the user's
 /// own config and points the line at it. Returns its path, or `None` without one.
 fn set_ohmyposh(
-    state: &mut State,
+    state: &mut Record,
     text: &str,
     config_fish: &Path,
     home: &Path,
@@ -727,6 +778,7 @@ fn set_ohmyposh(
     let ours = source_path.with_file_name(ohmyposh::FILE);
     ohmyposh::write(&ours, &json).map_err(err)?;
     state.ohmyposh_previous = Some(original.clone());
+    state.commit()?;
     let pointed = ohmyposh::set_config_arg(text, &ohmyposh::sibling_arg(&original));
     if pointed != text {
         ohmyposh::write_config(config_fish, &pointed).map_err(err)?;
@@ -734,7 +786,7 @@ fn set_ohmyposh(
     Ok(Some(ours))
 }
 
-fn set_btop(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Result<(), String> {
+fn set_btop(dirs: &Dirs, state: &mut Record, palette: Option<&Palette>) -> Result<(), String> {
     let err = |e: ApplyError| e.to_string();
     let conf = btop::conf_path(&dirs.config);
     let text = btop::read_conf(&conf).map_err(err)?;
@@ -754,6 +806,7 @@ fn set_btop(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Result
             state.btop_previous.get_or_insert_with(|| {
                 btop::current_theme(&text).unwrap_or_else(|| btop::DEFAULT_THEME.into())
             });
+            state.commit()?;
             btop::theme_path(&dirs.config).display().to_string()
         }
     };
@@ -782,7 +835,7 @@ fn set_popups(dirs: &Dirs, css: &str) -> Result<bool, String> {
 /// the Shell is themed. Installed while any is on.
 fn set_shell_extension(
     dirs: &Dirs,
-    state: &mut State,
+    state: &mut Record,
     extras: &Extras,
     look: Option<Look>,
 ) -> Result<(), String> {
@@ -904,7 +957,7 @@ fn set_mozilla(
 
 /// GNOME Text Editor: Recoolor's GtkSourceView schemes (light and dark, which
 /// Text Editor switches between itself), selected in its settings.
-fn set_text_editor(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result<(), String> {
+fn set_text_editor(dirs: &Dirs, state: &mut Record, look: Option<Look>) -> Result<(), String> {
     let Some(look) = look else {
         gtksourceview::remove(&dirs.data).map_err(|e| e.to_string())?;
         if let Some(previous) = state.text_editor_previous.clone() {
@@ -932,6 +985,7 @@ fn set_text_editor(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result
             }
         })
         .clone();
+    state.commit()?;
     if current.starts_with(gtksourceview::SCHEME) {
         // Text Editor reloads a scheme when it switches to it, so switch away and
         // back, but only when the files changed.
@@ -943,7 +997,7 @@ fn set_text_editor(dirs: &Dirs, state: &mut State, look: Option<Look>) -> Result
     desktop::set_string(&settings, "style-scheme", gtksourceview::SCHEME)
 }
 
-fn set_kde(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Result<(), String> {
+fn set_kde(dirs: &Dirs, state: &mut Record, palette: Option<&Palette>) -> Result<(), String> {
     let overrides = flatpak::overrides_path(&dirs.data);
     let err = |e: ApplyError| e.to_string();
     match palette {
@@ -959,6 +1013,7 @@ fn set_kde(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Result<
             if !state.qt_env_added {
                 state.qt_env_added =
                     flatpak::set_env(&overrides, flatpak::QT_THEME).map_err(err)?;
+                state.commit()?;
             }
         }
         None => {
@@ -988,7 +1043,7 @@ fn set_spotifast(dirs: &Dirs, palette: Option<&Palette>) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
-fn set_vscode(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Result<(), String> {
+fn set_vscode(dirs: &Dirs, state: &mut Record, palette: Option<&Palette>) -> Result<(), String> {
     let home = desktop::home()?;
     let path = vscode::settings_path(&dirs.config);
     let err = |e: ApplyError| e.to_string();
@@ -1017,6 +1072,7 @@ fn set_vscode(dirs: &Dirs, state: &mut State, palette: Option<&Palette>) -> Resu
     state
         .vscode_previous
         .get_or_insert_with(|| vscode::current_theme(&text).unwrap_or_default());
+    state.commit()?;
     if vscode::auto_detects(&text) {
         return Err("VS Code follows the system style (window.autoDetectColorScheme), so it ignores the selected theme; turn that off, or pick Recoolor Dark and Light as its preferred themes".into());
     }
@@ -1156,14 +1212,15 @@ fn light_shell_first(dirs: &Dirs, settings: &gio::Settings) -> bool {
         return false;
     };
     let path = state::path(&dirs.state);
-    let Ok(mut state) = State::load(&path) else {
+    let Ok(state) = State::load(&path) else {
         return false;
     };
+    let mut state = Record::new(state, path);
     if let Err(e) = set_light_shell(&mut state, true) {
         log::error(&format!("recoolor watch: {e}"));
         return false;
     }
-    if let Err(e) = state.save(&path) {
+    if let Err(e) = state.commit() {
         log::error(&format!("recoolor watch: {e}"));
     }
     gio::Settings::sync();
@@ -1278,10 +1335,24 @@ mod tests {
             wallpaper_tint: Tint::None,
             ..Extras::default()
         };
-        let mut state = State::default();
+        let mut state = Record::new(State::default(), state::path(&dirs.state));
 
         set_wallpaper(&dirs, &mut state, &extras, Some(look)).unwrap();
-        set_interface(&mut state.icons_previous, "icon-theme", Some("Papirus")).unwrap();
+        set_interface(
+            &mut state,
+            |s| &mut s.icons_previous,
+            "icon-theme",
+            Some("Papirus"),
+        )
+        .unwrap();
+        // Recorded on disk before the change, so a crash here could still reset.
+        assert_eq!(
+            State::load(&state::path(&dirs.state))
+                .unwrap()
+                .icons_previous
+                .as_deref(),
+            Some(before[2].as_str())
+        );
         set_light_shell(&mut state, true).unwrap();
         assert_eq!(
             read(&background, "picture-uri"),
@@ -1294,7 +1365,7 @@ mod tests {
         }
 
         set_wallpaper(&dirs, &mut state, &Extras::default(), None).unwrap();
-        set_interface(&mut state.icons_previous, "icon-theme", None).unwrap();
+        set_interface(&mut state, |s| &mut s.icons_previous, "icon-theme", None).unwrap();
         set_light_shell(&mut state, false).unwrap();
         let after = [
             read(&background, "picture-uri"),
@@ -1303,7 +1374,7 @@ mod tests {
             read(&interface, "color-scheme"),
         ];
         assert_eq!(after, before);
-        assert_eq!(state, State::default(), "nothing left to restore");
+        assert_eq!(*state, State::default(), "nothing left to restore");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

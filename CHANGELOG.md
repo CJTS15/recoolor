@@ -8,6 +8,9 @@
 - Fixed: VS Code kept its own theme when `settings.json` had a glob such as
   `"**/*.log"` before `workbench.colorTheme`; Recoolor added a second theme
   key that VS Code ignored.
+- Fixed: the settings Reset puts back (wallpaper, icons, Shell theme, Dark
+  Style and the rest) are saved before Recoolor changes them, not after
+  everything, so an Apply cut short no longer loses them.
 
 ## 1.5.3 — 2026-11-11
 
