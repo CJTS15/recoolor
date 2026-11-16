@@ -19,6 +19,11 @@
 - Fixed: the window, the command line and the watch service no longer write
   over each other; the watcher could turn an app back on that Apply had just
   turned off.
+- Fixed: tinted wallpapers from phone photos came out sideways; they now follow
+  the photo's orientation, as GNOME does.
+- Fixed: a tinted wallpaper cut short while saving was reused half-written.
+  Tinted wallpapers are made once more after this update, since their names
+  no longer depend on the Rust version they were built with.
 
 ## 1.5.3 — 2026-11-11
 

@@ -4,9 +4,7 @@
 //! Images cannot carry a text marker, so Recoolor's folder is the marker:
 //! everything in `$XDG_DATA_HOME/recoolor/wallpapers/` is Recoolor's.
 
-use std::collections::hash_map::DefaultHasher;
 use std::fs;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -46,18 +44,36 @@ pub fn output_stem(
     strength: u8,
 ) -> Option<PathBuf> {
     let meta = fs::metadata(source).ok()?;
-    let mut hasher = DefaultHasher::new();
-    source.hash(&mut hasher);
-    meta.len().hash(&mut hasher);
-    meta.modified().ok().hash(&mut hasher);
-    let mut colors = palette.colors.clone();
-    if tint != Tint::Mono {
-        // Only Mono uses the accent, so an accent change needs no new file.
-        colors.accent = colors.base;
-    }
-    format!("{colors:?}").hash(&mut hasher);
-    (tint, strength).hash(&mut hasher);
-    Some(dir(data_home).join(format!("{:016x}-{}", hasher.finish(), palette.id)))
+    let c = &palette.colors;
+    // Only Mono uses the accent, so an accent change needs no new file.
+    let accent = if tint == Tint::Mono { c.accent } else { c.base };
+    let colors = [
+        c.base, c.mantle, c.crust, c.surface, c.overlay, c.text, c.subtext, accent, c.red,
+        c.orange, c.yellow, c.green, c.blue, c.teal, c.purple, c.pink,
+    ];
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos());
+    let tint = match tint {
+        Tint::Match => "match",
+        Tint::Mono => "mono",
+        Tint::None => "none",
+    };
+    // A hash fixed by this code, not by the Rust version (as `DefaultHasher` and
+    // `Debug` output are), so an update does not rename and re-tint every image.
+    let mut key = source.as_os_str().as_encoded_bytes().to_vec();
+    let colors: String = colors.iter().map(|c| format!("{c} ")).collect();
+    key.extend(format!("\0{}\0{modified}\0{colors}\0{tint}\0{strength}", meta.len()).bytes());
+    Some(dir(data_home).join(format!("{:016x}-{}", fnv1a(&key), palette.id)))
+}
+
+/// 64-bit FNV-1a.
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, &b| {
+        (hash ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
 }
 
 /// Deletes Recoolor's wallpapers except `keep` (the ones in use).
@@ -270,6 +286,13 @@ mod tests {
             path(&palette("dracula"), Tint::Match)
         );
         assert!(is_ours(&path(&mocha, Tint::Match), home.path()));
+    }
+
+    #[test]
+    fn output_names_hash_the_same_on_every_build() {
+        // FNV-1a's published test vectors.
+        assert_eq!(fnv1a(b""), 0xcbf2_9ce4_8422_2325);
+        assert_eq!(fnv1a(b"a"), 0xaf63_dc4c_8601_ec8c);
     }
 
     /// `cargo test --release -- --ignored lut_speed` to time a 4K image.
