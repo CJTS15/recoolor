@@ -24,6 +24,8 @@
 - Fixed: a tinted wallpaper cut short while saving was reused half-written.
   Tinted wallpapers are made once more after this update, since their names
   no longer depend on the Rust version they were built with.
+- The window no longer stalls while it lists apps to restart or prepares
+  GDM Settings, and waits at most 5 seconds on the Shell instead of 25.
 
 ## 1.5.3 — 2026-11-11
 

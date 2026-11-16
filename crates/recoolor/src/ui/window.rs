@@ -825,7 +825,7 @@ impl Window {
         let status = match login_screen::shows() {
             _ if !linked => "Set up once to use Recoolor's theme through GDM Settings".to_owned(),
             login_screen::Shows::Palette(id) => {
-                format!("Shows {}", login_screen::palette_name(&id))
+                format!("Shows {}", self.palette_name(&id))
             }
             login_screen::Shows::Gnome => "Shows GNOME's own look".to_owned(),
         };
@@ -847,7 +847,7 @@ impl Window {
             return;
         }
         let shown = match recoolor_core::shell::status(&dirs.data) {
-            Ok(CssState::Recoolor(id)) => login_screen::palette_name(&id),
+            Ok(CssState::Recoolor(id)) => self.palette_name(&id),
             _ => {
                 self.alert(
                     "Login Screen",
@@ -856,46 +856,56 @@ impl Window {
                 return;
             }
         };
-        let prepared = if login_screen::running() {
-            // It would overwrite its settings file when it closes.
-            Err("GDM Settings is already open: pick “Recoolor” as its shell theme there".to_owned())
-        } else {
-            let extras = self.extras.get();
-            let accent = self.interface.as_ref().and_then(desktop::accent_choice);
-            // The image the lock screen shows, copied where GDM Settings can read it.
-            let lock = recoolor_core::apps::shell_fade::read_config(&dirs.data).lock_image;
-            let background = match lock {
-                Some(image) => {
-                    recoolor_core::shell::login_background(&dirs.data, std::path::Path::new(&image))
-                        .map(Some)
-                        .map_err(|e| e.to_string())
+        let extras = self.extras.get();
+        let accent = self.interface.as_ref().and_then(desktop::accent_choice);
+        // On a worker: it runs `flatpak ps` and copies an image that can be large.
+        self.run_busy(
+            move || {
+                if login_screen::running() {
+                    // It would overwrite its settings file when it closes.
+                    return Err(
+                        "GDM Settings is already open: pick “Recoolor” as its shell theme there"
+                            .to_owned(),
+                    );
                 }
-                None => Ok(None),
-            };
-            background.and_then(|background| {
-                desktop::home().and_then(|home| {
-                    login_screen::prefill(
-                        &home,
-                        accent.as_deref(),
-                        extras.icons.as_deref(),
-                        extras.cursors.as_deref(),
-                        background.as_deref(),
-                    )
-                })
-            })
-        };
-        if let Err(e) = targets::remember_login_screen(&dirs, true) {
-            log::error(&e);
-        }
-        match login_screen::open() {
-            Ok(()) => self.toast(&match prepared {
-                Ok(()) => format!(
-                    "In GDM Settings, press Apply. The login screen gets the palette on screen now: {shown}."
-                ),
-                Err(e) => format!("{e}, then press Apply."),
-            }),
-            Err(e) => self.alert("Login Screen", &e),
-        }
+                // The image the lock screen shows, copied where GDM Settings can read it.
+                let lock = recoolor_core::apps::shell_fade::read_config(&dirs.data).lock_image;
+                let background = lock
+                    .map(|image| {
+                        recoolor_core::shell::login_background(
+                            &dirs.data,
+                            std::path::Path::new(&image),
+                        )
+                        .map_err(|e| e.to_string())
+                    })
+                    .transpose()?;
+                login_screen::prefill(
+                    &desktop::home()?,
+                    accent.as_deref(),
+                    extras.icons.as_deref(),
+                    extras.cursors.as_deref(),
+                    background.as_deref(),
+                )?;
+                targets::remember_login_screen(&dirs, true)
+            },
+            move |w, prepared| match login_screen::open() {
+                Ok(()) => w.toast(&match prepared {
+                    Ok(()) => format!(
+                        "In GDM Settings, press Apply. The login screen gets the palette on screen now: {shown}."
+                    ),
+                    Err(e) => format!("{e}, then press Apply."),
+                }),
+                Err(e) => w.alert("Login Screen", &e),
+            },
+        );
+    }
+
+    /// A palette's name for its id, or the id when no palette has it any more.
+    fn palette_name(&self, id: &str) -> String {
+        self.palettes
+            .iter()
+            .find(|p| p.id == id)
+            .map_or_else(|| id.to_owned(), |p| p.name.clone())
     }
 
     /// Runs `work` on a worker thread, since it waits on systemctl, D-Bus and

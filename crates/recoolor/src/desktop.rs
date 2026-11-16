@@ -195,7 +195,9 @@ fn session_call(
                 args.as_ref(),
                 None,
                 gio::DBusCallFlags::NONE,
-                -1,
+                // Every call here answers at once when the other side is well;
+                // D-Bus's own default would wait 25 s on a stuck one.
+                5000,
                 gio::Cancellable::NONE,
             )
         })
@@ -466,11 +468,9 @@ pub fn ptyxis_profile() -> Option<gio::Settings> {
     )
 }
 
+/// Looks on `PATH` rather than running fish: the window asks each time it comes back.
 pub fn fish_installed() -> bool {
-    Command::new("fish")
-        .arg("--version")
-        .output()
-        .is_ok_and(|o| o.status.success())
+    glib::find_program_in_path("fish").is_some()
 }
 
 /// btop writes its config on first run.
