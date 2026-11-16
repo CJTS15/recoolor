@@ -102,8 +102,9 @@ pub fn prefill(
     // A missing file is fine: GDM Settings has not saved anything yet.
     let _ = file.load_from_file(&path, glib::KeyFileFlags::KEEP_COMMENTS);
     let group = "io/github/realmazharhussain/GdmSettings/appearance";
-    // Values are GVariant text: strings in quotes. Theme and accent names have none.
-    let set = |key: &str, value: &str| file.set_string(group, key, &format!("'{value}'"));
+    // Values are GVariant text, which GLib quotes and escapes for us.
+    let set =
+        |key: &str, value: &str| file.set_string(group, key, &value.to_variant().print(false));
     set("shell-theme", shell::THEME_NAME);
     if let Some(accent) = accent {
         set("accent-color", accent);
@@ -116,11 +117,7 @@ pub fn prefill(
     }
     if let Some(background) = background {
         set("background-type", "image");
-        // A path with a quote would end the GVariant string early.
-        set(
-            "background-image",
-            &background.display().to_string().replace('\'', "\\'"),
-        );
+        set("background-image", &background.display().to_string());
     }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -150,7 +147,7 @@ mod tests {
             "[io/github/realmazharhussain/GdmSettings]\ninitial-warning=false\n",
         )
         .unwrap();
-        let background = Path::new("/home/me/.local/share/themes/Recoolor/login-background.jpg");
+        let background = Path::new("/home/me/it's\\here/login-background.jpg");
         prefill(
             &home,
             Some("pink"),
@@ -166,9 +163,22 @@ mod tests {
         assert!(text.contains("accent-color='pink'"));
         assert!(!text.contains("icon-theme"));
         assert!(text.contains("background-type='image'"));
-        assert!(text.contains(
-            "background-image='/home/me/.local/share/themes/Recoolor/login-background.jpg'"
-        ));
+        // Quoted and escaped as GVariant text: GDM Settings reads the path back whole.
+        let value = file_value(&text, "background-image");
+        let parsed = glib::Variant::parse(None, &value).unwrap();
+        assert_eq!(
+            parsed.str(),
+            Some("/home/me/it's\\here/login-background.jpg")
+        );
         std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    /// A key's raw value in key file text, unescaped the way GKeyFile does.
+    fn file_value(text: &str, key: &str) -> String {
+        let file = glib::KeyFile::new();
+        file.load_from_data(text, glib::KeyFileFlags::NONE).unwrap();
+        file.string("io/github/realmazharhussain/GdmSettings/appearance", key)
+            .unwrap()
+            .to_string()
     }
 }

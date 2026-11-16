@@ -310,6 +310,9 @@ export default class Recoolor extends Extension {
     // Quits each app the way the dash's Quit does (one with unsaved work asks), then
     // opens it again once it has stopped; not if it still runs after 15 s.
     RestartApps(ids) {
+        // The extension also runs on the lock screen: nothing quits behind it.
+        if (Main.sessionMode.isLocked)
+            return;
         const system = Shell.AppSystem.get_default();
         for (const id of ids) {
             const app = system.lookup_app(id);

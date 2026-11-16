@@ -356,8 +356,6 @@ fn activate_action(name: &str, path: &str, action: &str) -> Result<(), String> {
     .map(drop)
 }
 
-/// Asks Recoolor's Shell extension to `Freeze` or `Fade` the screen. Does nothing
-/// when the extension is not running; a failure only costs the animation.
 /// The running apps with windows, as (desktop id, name), from Recoolor's Shell
 /// extension; empty without it, since GNOME Shell keeps its own list private.
 pub fn running_apps() -> Vec<(String, String)> {
@@ -408,6 +406,8 @@ pub fn reload_fish(style: Option<&str>) {
     }
 }
 
+/// Asks Recoolor's Shell extension to `Freeze` or `Fade` the screen. Does nothing
+/// when the extension is not running; a failure only costs the animation.
 pub fn screen_fade(method: &str) {
     if !running(shell_fade::BUS_NAME) {
         return;

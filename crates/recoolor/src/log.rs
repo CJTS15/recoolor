@@ -2,7 +2,7 @@
 //! `$XDG_STATE_HOME/recoolor/recoolor.log` (normally `~/.local/state/recoolor/recoolor.log`).
 
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use gtk::glib;
@@ -30,21 +30,30 @@ fn append(level: &str, message: &str) {
         .unwrap_or_default();
     // Indent continuation lines so each entry starts with a timestamp.
     let message = message.replace('\n', "\n    ");
-    // Keep the last 256 KiB once the log passes 1 MiB.
-    if fs::metadata(&path).is_ok_and(|m| m.len() > 1 << 20)
-        && let Ok(text) = fs::read_to_string(&path)
-    {
-        let cut = text.len() - (256 << 10);
-        let cut = (cut..text.len())
-            .find(|&i| text.is_char_boundary(i))
-            .unwrap_or(cut);
-        let tail = &text[cut..];
-        let tail = tail.split_once('\n').map_or(tail, |(_, rest)| rest);
-        let _ = fs::write(&path, tail);
-    }
     // Logging must never break the app, so a failed write is dropped.
     let _ = fs::create_dir_all(path.parent().expect("log path has a parent")).and_then(|()| {
-        let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .append(true)
+            .open(&path)?;
+        // The window, the watcher and the command line share the log: the lock keeps
+        // one from appending while another cuts it short.
+        file.lock()?;
+        // Keep the last 256 KiB once the log passes 1 MiB.
+        if file.metadata()?.len() > 1 << 20 {
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes)?;
+            let tail = &bytes[bytes.len() - (256 << 10)..];
+            // From the start of a line, which is also a character boundary.
+            let tail = tail
+                .iter()
+                .position(|&b| b == b'\n')
+                .map_or(tail, |i| &tail[i + 1..]);
+            let tail = tail.to_vec();
+            file.set_len(0)?;
+            file.write_all(&tail)?;
+        }
         writeln!(file, "{time} {level} {message}")
     });
 }

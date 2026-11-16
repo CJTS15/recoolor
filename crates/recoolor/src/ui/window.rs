@@ -41,7 +41,6 @@ struct Window {
     light_row: adw::ComboRow,
     dark_row: adw::ComboRow,
     /// Recoolor (applies), with Reset in its dropdown, in the header bar.
-    /// that only the narrow layout shows.
     apply: adw::SplitButton,
     apply_action: gtk::gio::SimpleAction,
     reset_action: gtk::gio::SimpleAction,

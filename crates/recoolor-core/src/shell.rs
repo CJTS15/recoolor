@@ -44,11 +44,20 @@ pub fn copied_palette_id(css: &str) -> Option<&str> {
 pub fn login_background(data_home: &Path, image: &Path) -> Result<PathBuf, ApplyError> {
     let ext = image.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
     let path = theme_dir(data_home).join(format!("{LOGIN_BACKGROUND}.{ext}"));
-    for old in login_backgrounds(data_home) {
+    fs::create_dir_all(theme_dir(data_home)).map_err(io_err(&path))?;
+    // Copied beside it and renamed in, so a failed copy keeps the one there was.
+    let tmp = theme_dir(data_home).join(format!(".{LOGIN_BACKGROUND}.recoolor-tmp"));
+    if let Err(e) = fs::copy(image, &tmp) {
+        let _ = fs::remove_file(&tmp);
+        return Err(io_err(image)(e));
+    }
+    fs::rename(&tmp, &path).map_err(io_err(&path))?;
+    for old in login_backgrounds(data_home)
+        .into_iter()
+        .filter(|p| *p != path)
+    {
         fs::remove_file(&old).map_err(io_err(&old))?;
     }
-    fs::create_dir_all(theme_dir(data_home)).map_err(io_err(&path))?;
-    fs::copy(image, &path).map_err(io_err(image))?;
     Ok(path)
 }
 

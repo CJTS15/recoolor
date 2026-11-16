@@ -26,6 +26,15 @@
   no longer depend on the Rust version they were built with.
 - The window no longer stalls while it lists apps to restart or prepares
   GDM Settings, and waits at most 5 seconds on the Shell instead of 25.
+- `state.toml` keys from a newer Recoolor are kept instead of making the file
+  unreadable, so from this version on Reset still works after going back a
+  version.
+- Smaller fixes: GDM Settings gets image paths with quotes or backslashes
+  intact; the oh-my-posh line's exact `--config` value is replaced; a failed
+  copy of the login background keeps the old one; the log is no longer cut
+  short while another Recoolor writes to it; Restart Apps does nothing while
+  the screen is locked.
+- CI checks the Shell extension's JavaScript and builds on Fedora 45 too.
 
 ## 1.5.3 — 2026-11-11
 
