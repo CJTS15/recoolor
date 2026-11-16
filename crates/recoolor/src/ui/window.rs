@@ -41,7 +41,6 @@ struct Window {
     light_row: adw::ComboRow,
     dark_row: adw::ComboRow,
     /// Recoolor (applies), with Reset in its dropdown, in the header bar.
-    /// that only the narrow layout shows.
     apply: adw::SplitButton,
     apply_action: gtk::gio::SimpleAction,
     reset_action: gtk::gio::SimpleAction,
@@ -725,12 +724,12 @@ impl Window {
                 let choice = Choice::from_slice(&palettes);
                 let result = targets::apply(&dirs, choice, &extras, dark_now);
                 let hint = targets::login_screen_hint(&dirs, choice, &extras);
-                (result, hint)
+                (result, hint, restart_candidates(restartable))
             },
-            move |w, (result, hint)| match result {
+            move |w, (result, hint, candidates)| match result {
                 Ok(problems) => {
                     w.show_extras_on_disk();
-                    w.offer_restart(&name, restartable);
+                    w.offer_restart(&format!("Recoolored with {name}."), candidates);
                     if let Some(hint) = hint {
                         log::info(&hint);
                         let toast = adw::Toast::builder()
@@ -774,12 +773,17 @@ impl Window {
         let Some(dirs) = self.dirs.clone() else {
             return;
         };
+        // Apps Recoolor themed outside GTK put their own colors back by themselves.
+        let restartable = vec![&restart::CHROME];
         self.run_busy(
-            move || targets::reset(&dirs),
-            |w, (outcomes, problems)| {
+            move || {
+                let (outcomes, problems) = targets::reset(&dirs);
+                (outcomes, problems, restart_candidates(restartable))
+            },
+            |w, (outcomes, problems, candidates)| {
                 w.show_extras_on_disk();
                 if !outcomes.is_empty() {
-                    w.toast(&reset_summary(&outcomes));
+                    w.offer_restart(&reset_summary(&outcomes), candidates);
                 }
                 if !problems.is_empty() {
                     w.alert("Some parts were not reset", &problems.join("\n\n"));
@@ -820,7 +824,7 @@ impl Window {
         let status = match login_screen::shows() {
             _ if !linked => "Set up once to use Recoolor's theme through GDM Settings".to_owned(),
             login_screen::Shows::Palette(id) => {
-                format!("Shows {}", login_screen::palette_name(&id))
+                format!("Shows {}", self.palette_name(&id))
             }
             login_screen::Shows::Gnome => "Shows GNOME's own look".to_owned(),
         };
@@ -842,7 +846,7 @@ impl Window {
             return;
         }
         let shown = match recoolor_core::shell::status(&dirs.data) {
-            Ok(CssState::Recoolor(id)) => login_screen::palette_name(&id),
+            Ok(CssState::Recoolor(id)) => self.palette_name(&id),
             _ => {
                 self.alert(
                     "Login Screen",
@@ -851,46 +855,56 @@ impl Window {
                 return;
             }
         };
-        let prepared = if login_screen::running() {
-            // It would overwrite its settings file when it closes.
-            Err("GDM Settings is already open: pick “Recoolor” as its shell theme there".to_owned())
-        } else {
-            let extras = self.extras.get();
-            let accent = self.interface.as_ref().and_then(desktop::accent_choice);
-            // The image the lock screen shows, copied where GDM Settings can read it.
-            let lock = recoolor_core::apps::shell_fade::read_config(&dirs.data).lock_image;
-            let background = match lock {
-                Some(image) => {
-                    recoolor_core::shell::login_background(&dirs.data, std::path::Path::new(&image))
-                        .map(Some)
-                        .map_err(|e| e.to_string())
+        let extras = self.extras.get();
+        let accent = self.interface.as_ref().and_then(desktop::accent_choice);
+        // On a worker: it runs `flatpak ps` and copies an image that can be large.
+        self.run_busy(
+            move || {
+                if login_screen::running() {
+                    // It would overwrite its settings file when it closes.
+                    return Err(
+                        "GDM Settings is already open: pick “Recoolor” as its shell theme there"
+                            .to_owned(),
+                    );
                 }
-                None => Ok(None),
-            };
-            background.and_then(|background| {
-                desktop::home().and_then(|home| {
-                    login_screen::prefill(
-                        &home,
-                        accent.as_deref(),
-                        extras.icons.as_deref(),
-                        extras.cursors.as_deref(),
-                        background.as_deref(),
-                    )
-                })
-            })
-        };
-        if let Err(e) = targets::remember_login_screen(&dirs, true) {
-            log::error(&e);
-        }
-        match login_screen::open() {
-            Ok(()) => self.toast(&match prepared {
-                Ok(()) => format!(
-                    "In GDM Settings, press Apply. The login screen gets the palette on screen now: {shown}."
-                ),
-                Err(e) => format!("{e}, then press Apply."),
-            }),
-            Err(e) => self.alert("Login Screen", &e),
-        }
+                // The image the lock screen shows, copied where GDM Settings can read it.
+                let lock = recoolor_core::apps::shell_fade::read_config(&dirs.data).lock_image;
+                let background = lock
+                    .map(|image| {
+                        recoolor_core::shell::login_background(
+                            &dirs.data,
+                            std::path::Path::new(&image),
+                        )
+                        .map_err(|e| e.to_string())
+                    })
+                    .transpose()?;
+                login_screen::prefill(
+                    &desktop::home()?,
+                    accent.as_deref(),
+                    extras.icons.as_deref(),
+                    extras.cursors.as_deref(),
+                    background.as_deref(),
+                )?;
+                targets::remember_login_screen(&dirs, true)
+            },
+            move |w, prepared| match login_screen::open() {
+                Ok(()) => w.toast(&match prepared {
+                    Ok(()) => format!(
+                        "In GDM Settings, press Apply. The login screen gets the palette on screen now: {shown}."
+                    ),
+                    Err(e) => format!("{e}, then press Apply."),
+                }),
+                Err(e) => w.alert("Login Screen", &e),
+            },
+        );
+    }
+
+    /// A palette's name for its id, or the id when no palette has it any more.
+    fn palette_name(&self, id: &str) -> String {
+        self.palettes
+            .iter()
+            .find(|p| p.id == id)
+            .map_or_else(|| id.to_owned(), |p| p.name.clone())
     }
 
     /// Runs `work` on a worker thread, since it waits on systemctl, D-Bus and
@@ -986,24 +1000,18 @@ impl Window {
         statuses
     }
 
-    /// After Recoolor: apps read the colors when they start, so one dialog lists the
-    /// open ones to restart (the browsers, and every app the Shell extension sees),
-    /// or a toast when none is open.
-    fn offer_restart(self: &Rc<Self>, name: &str, browsers: Vec<&'static restart::App>) {
-        let browsers: Vec<&'static restart::App> = browsers
-            .into_iter()
-            .filter(|a| restart::is_running(a))
-            .collect();
-        // Restored as they were, so checked; anything else could lose its state.
-        const CHECKED: [&str; 2] = ["org.gnome.Nautilus.desktop", "org.gnome.Settings.desktop"];
-        let own = [restart::FIREFOX, restart::THUNDERBIRD, restart::CHROME];
-        let others: Vec<(String, String)> = desktop::running_apps()
-            .into_iter()
-            .filter(|(id, _)| id != &format!("{}.desktop", super::APP_ID))
-            .filter(|(id, _)| !own.iter().any(|b| b.desktop.contains(&id.as_str())))
-            .collect();
-        if browsers.is_empty() && others.is_empty() {
-            self.toast(&format!("Recoolored with {name}."));
+    /// After Recoolor or Reset: apps read the colors when they start, so one dialog
+    /// lists the open ones to restart (the browsers, every app the Shell extension
+    /// sees, and Files and Calendar running in the background), or a toast when
+    /// none is open. Nothing restarts unless ticked here.
+    fn offer_restart(self: &Rc<Self>, summary: &str, candidates: RestartCandidates) {
+        let RestartCandidates {
+            browsers,
+            others,
+            background,
+        } = candidates;
+        if browsers.is_empty() && others.is_empty() && background.is_empty() {
+            self.toast(summary);
             return;
         }
 
@@ -1011,9 +1019,12 @@ impl Window {
             .selection_mode(gtk::SelectionMode::None)
             .css_classes(["boxed-list"])
             .build();
-        let row = |title: &str, checked: bool| {
+        let row = |title: &str, subtitle: &str, checked: bool| {
             let check = gtk::CheckButton::builder().active(checked).build();
-            let row = adw::ActionRow::builder().title(title).build();
+            let row = adw::ActionRow::builder()
+                .title(title)
+                .subtitle(subtitle)
+                .build();
             row.add_prefix(&check);
             row.set_activatable_widget(Some(&check));
             list.append(&row);
@@ -1021,20 +1032,25 @@ impl Window {
         };
         let browser_checks: Vec<_> = browsers
             .iter()
-            .map(|app| (*app, row(app.name, true)))
+            .map(|app| (*app, row(app.name, "", true)))
             .collect();
         let other_checks: Vec<_> = others
             .into_iter()
             .map(|(id, title)| {
-                let check = row(&title, CHECKED.contains(&id.as_str()));
+                let check = row(&title, "", RESTORES_ITSELF.contains(&id.as_str()));
                 (id, check)
             })
+            .collect();
+        // No window to lose, so ticked.
+        let background_checks: Vec<_> = background
+            .iter()
+            .map(|app| (*app, row(app.name, "Running in the background", true)))
             .collect();
 
         let dialog = adw::AlertDialog::builder()
             .heading("Restart Apps")
             .body(format!(
-                "Recoolored with {name}. Open apps show the new colors after a restart. \
+                "{summary} Open apps show the new colors after a restart. \
                  Apps that save their session come back as they were; others open fresh."
             ))
             .extra_child(&list)
@@ -1055,12 +1071,28 @@ impl Window {
                 .filter(|(_, c)| c.is_active())
                 .map(|(id, _)| id.clone())
                 .collect();
+            let background: Vec<&'static desktop::ServiceApp> = background_checks
+                .iter()
+                .filter(|(_, c)| c.is_active())
+                .map(|(a, _)| *a)
+                .collect();
             w.run_busy(
                 move || {
                     let mut problems: Vec<String> = apps
                         .iter()
                         .filter_map(|app| restart::restart(app).err())
                         .collect();
+                    // Files and Calendar outlive the Shell's quit, so they are
+                    // stopped for good and reopened here.
+                    let (services, ids): (Vec<String>, Vec<String>) =
+                        ids.into_iter().partition(|id| service_app(id).is_some());
+                    for id in &services {
+                        let app = service_app(id).expect("partitioned");
+                        problems.extend(desktop::restart_service_app(app, true).err());
+                    }
+                    for app in background {
+                        problems.extend(desktop::restart_service_app(app, false).err());
+                    }
                     if !ids.is_empty()
                         && let Err(e) = desktop::restart_apps(&ids)
                     {
@@ -1091,6 +1123,49 @@ impl Window {
         dialog.add_response("ok", "OK");
         dialog.present(Some(&self.window));
     }
+}
+
+/// Apps that come back as they were after a restart, so ticked in the dialog;
+/// anything else could lose its state.
+const RESTORES_ITSELF: [&str; 2] = ["org.gnome.Nautilus.desktop", "org.gnome.Settings.desktop"];
+
+/// The open apps to offer a restart, found on a worker thread: it scans `/proc`
+/// and waits on the Shell over D-Bus.
+struct RestartCandidates {
+    browsers: Vec<&'static restart::App>,
+    /// (desktop id, name) of the other apps with windows.
+    others: Vec<(String, String)>,
+    /// Files and Calendar running without a window.
+    background: Vec<&'static desktop::ServiceApp>,
+}
+
+fn restart_candidates(browsers: Vec<&'static restart::App>) -> RestartCandidates {
+    let browsers: Vec<&'static restart::App> = browsers
+        .into_iter()
+        .filter(|a| restart::is_running(a))
+        .collect();
+    let own = [&restart::FIREFOX, &restart::THUNDERBIRD, &restart::CHROME];
+    let others: Vec<(String, String)> = desktop::running_apps()
+        .into_iter()
+        .filter(|(id, _)| id != &format!("{}.desktop", super::APP_ID))
+        .filter(|(id, _)| !own.iter().any(|b| b.desktop.contains(&id.as_str())))
+        .collect();
+    let background = desktop::SERVICE_APPS
+        .iter()
+        .filter(|app| !others.iter().any(|(id, _)| id == app.desktop))
+        .filter(|app| desktop::service_running(app))
+        .collect();
+    RestartCandidates {
+        browsers,
+        others,
+        background,
+    }
+}
+
+fn service_app(desktop_id: &str) -> Option<&'static desktop::ServiceApp> {
+    desktop::SERVICE_APPS
+        .iter()
+        .find(|app| app.desktop == desktop_id)
 }
 
 fn gtk4_state(statuses: &[Status]) -> Option<&CssState> {

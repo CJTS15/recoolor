@@ -3,7 +3,7 @@
 Recoolor recolors a whole GNOME desktop from one palette: GTK and libadwaita apps,
 Flatpaks, GNOME Shell, the wallpaper, lock and login screens, and apps with themes of
 their own. This document explains how, and why it is built the way it is, as of
-version 1.5.0. For installing and using it, see the [README](../README.md); for what
+version 1.5.3 and the changes since. For installing and using it, see the [README](../README.md); for what
 it cannot do, see its [Scope and limitations](../README.md#scope-and-limitations).
 
 1. [Choosing the palettes](#1-choosing-the-palettes)
@@ -209,10 +209,16 @@ Each of these is a switch in the window, and each is undone by Reset.
 - **Records before it changes.** Each setting Recoolor changes (wallpaper, icon and
   GTK themes, the Shell theme, the Text Editor scheme, Ptyxis's palette, btop's,
   VS Code's and fish's config lines) is recorded once in
-  `~/.local/state/recoolor/state.toml`, with its old value. Reset puts back exactly
-  those, and nothing else.
-- **Atomic writes.** Files are written to a temporary file and renamed into place, so
-  a crash never leaves a half-written config.
+  `~/.local/state/recoolor/state.toml`, with its old value, and saved there before
+  the change, so an Apply cut short still leaves Reset what it needs. Reset puts
+  back exactly those, and nothing else.
+- **Atomic writes.** Configs, stylesheets and tinted wallpapers are written to a
+  temporary file and renamed into place, so a crash never leaves a half-written
+  one. A config that is a symlink, as dotfiles managers make, is written through
+  to its target and stays a link. VS Code's theme files are the exception: they
+  are rewritten in place, since VS Code watches the file itself.
+- **One at a time.** The window, the command line and the watch service take a
+  lock before they change anything, so they never write over each other.
 - **One Reset undoes everything**, including the Flatpak overrides it added and the
   watch service.
 
@@ -266,6 +272,7 @@ The window is a libadwaita app that follows GNOME's own patterns:
 - **Adaptive layout.** One column on a narrow window (down to 360 px), four cards per
   line when maximized.
 - **Readable errors and a log.** Errors say what to do, and everything is logged to
-  `~/.local/state/recoolor/recoolor.log` and the journal.
+  `~/.local/state/recoolor/recoolor.log` (the watch service's messages also reach
+  the journal).
 - The same works from the command line: `recoolor list`, `apply`, `status`,
   `restore`, `show`.

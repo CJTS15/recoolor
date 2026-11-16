@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: Recoolor and Reset no longer quit Files and Calendar without asking,
+  closing their windows. They are in the Restart Apps list instead, also when
+  they only run in the background, and Reset shows the list too.
+- Fixed: VS Code kept its own theme when `settings.json` had a glob such as
+  `"**/*.log"` before `workbench.colorTheme`; Recoolor added a second theme
+  key that VS Code ignored.
+- Fixed: the settings Reset puts back (wallpaper, icons, Shell theme, Dark
+  Style and the rest) are saved before Recoolor changes them, not after
+  everything, so an Apply cut short no longer loses them.
+- Fixed: restarting Firefox or Thunderbird could leave them closed: one window
+  that quit early stopped the others from coming back, and the Flatpak builds
+  are now reopened through their launcher.
+- Fixed: a config that is a symlink (dotfiles managed with stow or chezmoi) is
+  written through to its target instead of being replaced by a plain file.
+- Fixed: the window, the command line and the watch service no longer write
+  over each other; the watcher could turn an app back on that Apply had just
+  turned off.
+- Fixed: tinted wallpapers from phone photos came out sideways; they now follow
+  the photo's orientation, as GNOME does.
+- Fixed: a tinted wallpaper cut short while saving was reused half-written.
+  Tinted wallpapers are made once more after this update, since their names
+  no longer depend on the Rust version they were built with.
+- The window no longer stalls while it lists apps to restart or prepares
+  GDM Settings, and waits at most 5 seconds on the Shell instead of 25.
+- `state.toml` keys from a newer Recoolor are kept instead of making the file
+  unreadable, so from this version on Reset still works after going back a
+  version.
+- Smaller fixes: GDM Settings gets image paths with quotes or backslashes
+  intact; the oh-my-posh line's exact `--config` value is replaced; a failed
+  copy of the login background keeps the old one; the log is no longer cut
+  short while another Recoolor writes to it; Restart Apps does nothing while
+  the screen is locked.
+- CI checks the Shell extension's JavaScript and builds on Fedora 45 too.
+
 ## 1.5.3 — 2026-11-11
 
 - Fixed: on GNOME 51, locking the screen (Super+L, idle lock or suspend) with a

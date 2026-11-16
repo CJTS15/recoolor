@@ -309,17 +309,84 @@ pub fn auto_detects(text: &str) -> bool {
         .is_some_and(|i| text[i..].starts_with("true"))
 }
 
-/// Where the value of `key` starts, skipping keys in `//` and `/* */` comments.
+/// Where the value of `key` (with its quotes) starts in the top-level object, or
+/// `None`. A JSONC scan, so keys in comments, in strings (such as a glob like
+/// `"**/*.log"`, which holds `/*`) and in nested objects do not count. VS Code takes
+/// the last of duplicate keys, so this does too.
 fn value_start(text: &str, key: &str) -> Option<usize> {
-    text.match_indices(key).find_map(|(i, _)| {
-        let line_start = text[..i].rfind('\n').map_or(0, |n| n + 1);
-        let in_block = text[..i].rfind("/*") > text[..i].rfind("*/");
-        if in_block || text[line_start..i].trim_start().starts_with("//") {
-            return None;
+    let bytes = text.as_bytes();
+    let mut depth = 0usize;
+    let mut found = None;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'"' => {
+                let end = string_end(bytes, i)?;
+                if depth == 1 && &text[i..end] == key {
+                    let after = skip_blank(bytes, end);
+                    if bytes.get(after) == Some(&b':') {
+                        found = Some(skip_blank(bytes, after + 1));
+                    }
+                }
+                i = end;
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                i = text[i..].find('\n').map_or(bytes.len(), |n| i + n);
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                i = text[i + 2..]
+                    .find("*/")
+                    .map_or(bytes.len(), |n| i + 2 + n + 2);
+            }
+            b'{' | b'[' => {
+                depth += 1;
+                i += 1;
+            }
+            b'}' | b']' => {
+                depth = depth.saturating_sub(1);
+                i += 1;
+            }
+            _ => i += 1,
         }
-        let after = text[i + key.len()..].trim_start().strip_prefix(':')?;
-        Some(text.len() - after.trim_start().len())
-    })
+    }
+    found
+}
+
+/// The index just past the string that opens at `start`, or `None` if unclosed.
+fn string_end(bytes: &[u8], start: usize) -> Option<usize> {
+    let mut i = start + 1;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 2,
+            b'"' => return Some(i + 1),
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// The first index from `i` that is not whitespace or a comment.
+fn skip_blank(bytes: &[u8], mut i: usize) -> usize {
+    loop {
+        while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
+            i += 1;
+        }
+        match (bytes.get(i), bytes.get(i + 1)) {
+            (Some(b'/'), Some(b'/')) => {
+                while bytes.get(i).is_some_and(|&b| b != b'\n') {
+                    i += 1;
+                }
+            }
+            (Some(b'/'), Some(b'*')) => {
+                i += 2;
+                while i < bytes.len() && !bytes[i..].starts_with(b"*/") {
+                    i += 1;
+                }
+                i = (i + 2).min(bytes.len());
+            }
+            _ => return i,
+        }
+    }
 }
 
 /// Byte range of the theme key's string value.
@@ -388,6 +455,18 @@ mod tests {
         assert_eq!(current_theme(text).unwrap(), "Mine");
         assert!(!auto_detects(text));
         assert!(auto_detects("{ \"window.autoDetectColorScheme\": true }"));
+    }
+
+    #[test]
+    fn globs_and_nested_keys_are_not_comments_or_the_key() {
+        // A glob holds `/*`; the nested key is not VS Code's theme.
+        let text = "{\n    \"files.watcherExclude\": { \"**/target/**\": true },\n    \"[python]\": { \"workbench.colorTheme\": \"Nested\" },\n    \"workbench.colorTheme\": \"Default Dark Modern\",\n    \"window.autoDetectColorScheme\": true\n}\n";
+        assert_eq!(current_theme(text).as_deref(), Some("Default Dark Modern"));
+        assert!(auto_detects(text));
+        let set = set_theme(text, "Recoolor Dark");
+        assert_eq!(set, text.replace("Default Dark Modern", "Recoolor Dark"));
+        assert!(!remove_theme(&set).contains("Recoolor Dark"));
+        assert!(remove_theme(&set).contains("Nested"));
     }
 
     #[test]

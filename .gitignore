@@ -1,3 +1,6 @@
 /target
 /resources/plan/
 __pycache__/
+
+# Local code reviews, kept out of git
+/resources/review/

@@ -45,6 +45,9 @@ pub fn render(
         Pixbuf::from_file(source)
     }
     .map_err(|e| format!("cannot open {}: {e}", source.display()))?;
+    // Phone photos are stored sideways with an EXIF note to turn them; GNOME turns
+    // the untinted file itself, so the tinted copy must be turned too.
+    let image = image.apply_embedded_orientation().unwrap_or(image);
 
     let (width, height, rowstride) = (image.width(), image.height(), image.rowstride());
     let mut pixels = image.read_pixel_bytes().to_vec();
@@ -68,11 +71,19 @@ pub fn render(
     let png = is("png") || is("svg") || image.has_alpha();
     let out = stem.with_extension(if png { "png" } else { "jpg" });
     std::fs::create_dir_all(wallpaper::dir(data_home)).map_err(|e| e.to_string())?;
+    // Saved beside it and renamed into place: a file under the final name is reused
+    // as finished, so a save cut short must never leave one.
+    let tmp = out.with_extension(format!("{}.tmp", std::process::id()));
     let saved = if png {
-        tinted.savev(&out, "png", &[])
+        tinted.savev(&tmp, "png", &[])
     } else {
-        tinted.savev(&out, "jpeg", &[("quality", "92")])
-    };
-    saved.map_err(|e| format!("cannot save {}: {e}", out.display()))?;
+        tinted.savev(&tmp, "jpeg", &[("quality", "92")])
+    }
+    .map_err(|e| e.to_string())
+    .and_then(|()| std::fs::rename(&tmp, &out).map_err(|e| e.to_string()));
+    if let Err(e) = saved {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("cannot save {}: {e}", out.display()));
+    }
     Ok(out)
 }

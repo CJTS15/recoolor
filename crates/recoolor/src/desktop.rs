@@ -195,7 +195,9 @@ fn session_call(
                 args.as_ref(),
                 None,
                 gio::DBusCallFlags::NONE,
-                -1,
+                // Every call here answers at once when the other side is well;
+                // D-Bus's own default would wait 25 s on a stuck one.
+                5000,
                 gio::Cancellable::NONE,
             )
         })
@@ -245,46 +247,79 @@ fn running(name: &str) -> bool {
     .is_ok_and(|reply| reply.get::<(bool,)>().is_some_and(|(owned,)| owned))
 }
 
-/// Restarts apps that keep running in the background after their windows close,
-/// so they reopen with the new styles (GTK reads them only at startup). Files is
-/// quit (`kill`, what `nautilus -q` runs; `quit` only closes its windows).
-/// Calendar's service shows event reminders, so it is started again, through
-/// D-Bus activation so that a Flatpak Calendar comes back as well.
-pub fn restart_background_apps() -> Result<(), String> {
-    let mut problems = Vec::new();
-    if running("org.gnome.Nautilus")
-        && let Err(e) = activate_action("org.gnome.Nautilus", "/org/gnome/Nautilus", "kill")
-    {
-        problems.push(format!("cannot quit Files: {e}"));
+/// An app that keeps running in the background after its windows close, so the
+/// Shell's quit (which only closes windows) does not restart it: Files, and
+/// Calendar's reminder service. GTK reads styles only at startup.
+pub struct ServiceApp {
+    pub name: &'static str,
+    /// Its launcher, `bus` plus `.desktop`.
+    pub desktop: &'static str,
+    bus: &'static str,
+}
+
+pub const SERVICE_APPS: [ServiceApp; 2] = [
+    ServiceApp {
+        name: "Files",
+        desktop: "org.gnome.Nautilus.desktop",
+        bus: "org.gnome.Nautilus",
+    },
+    ServiceApp {
+        name: "Calendar",
+        desktop: "org.gnome.Calendar.desktop",
+        bus: "org.gnome.Calendar",
+    },
+];
+
+/// Whether `app` runs, with or without windows.
+pub fn service_running(app: &ServiceApp) -> bool {
+    running(app.bus)
+}
+
+/// Stops `app` for good and starts it again: with a window when `window` (it had
+/// one open), else only its background service. Files is quit with its `kill`
+/// action (what `nautilus -q` runs); Calendar's `quit` keeps the reminder service
+/// alive, so its process is stopped. Only for the apps the user ticked.
+pub fn restart_service_app(app: &ServiceApp, window: bool) -> Result<(), String> {
+    if !running(app.bus) {
+        return Ok(());
     }
-    const CALENDAR: &str = "org.gnome.Calendar";
-    if running(CALENDAR) {
-        // Its `quit` action keeps the reminder service alive, so stop the process.
-        let restarted = terminate(CALENDAR).and_then(|()| {
-            // A new service would only hand over to the old one while it lives.
-            for _ in 0..60 {
-                if !running(CALENDAR) {
-                    return session_call(
-                        "org.freedesktop.DBus",
-                        "/org/freedesktop/DBus",
-                        "org.freedesktop.DBus",
-                        "StartServiceByName",
-                        Some((CALENDAR, 0u32).to_variant()),
-                    )
-                    .map(drop);
-                }
-                std::thread::sleep(std::time::Duration::from_millis(50));
-            }
-            Err("it did not quit".into())
-        });
-        if let Err(e) = restarted {
-            problems.push(format!("cannot restart Calendar: {e}"));
-        }
-    }
-    if problems.is_empty() {
-        Ok(())
+    if app.bus == "org.gnome.Nautilus" {
+        activate_action(app.bus, "/org/gnome/Nautilus", "kill")
     } else {
-        Err(problems.join("; "))
+        terminate(app.bus)
+    }
+    .map_err(|e| format!("cannot quit {}: {e}", app.name))?;
+    // A new copy would only hand over to the old one while it lives.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while running(app.bus) {
+        if std::time::Instant::now() > deadline {
+            return Err(format!("{} did not quit", app.name));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    if window {
+        // Through its launcher, so a Flatpak comes back as well.
+        let entry = gio::AppInfo::all()
+            .into_iter()
+            .find(|a| a.id().as_deref() == Some(app.desktop))
+            .ok_or_else(|| format!("{} quit, but its launcher was not found", app.name))?;
+        entry
+            .launch(&[], gio::AppLaunchContext::NONE)
+            .map_err(|e| format!("cannot reopen {}: {e}", app.name))
+    } else if app.bus == "org.gnome.Calendar" {
+        // Its service shows event reminders, so it comes back; D-Bus activation
+        // starts a Flatpak Calendar as well. Files starts again when needed.
+        session_call(
+            "org.freedesktop.DBus",
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "StartServiceByName",
+            Some((app.bus, 0u32).to_variant()),
+        )
+        .map(drop)
+        .map_err(|e| format!("cannot restart {}'s reminders: {e}", app.name))
+    } else {
+        Ok(())
     }
 }
 
@@ -321,8 +356,6 @@ fn activate_action(name: &str, path: &str, action: &str) -> Result<(), String> {
     .map(drop)
 }
 
-/// Asks Recoolor's Shell extension to `Freeze` or `Fade` the screen. Does nothing
-/// when the extension is not running; a failure only costs the animation.
 /// The running apps with windows, as (desktop id, name), from Recoolor's Shell
 /// extension; empty without it, since GNOME Shell keeps its own list private.
 pub fn running_apps() -> Vec<(String, String)> {
@@ -373,6 +406,8 @@ pub fn reload_fish(style: Option<&str>) {
     }
 }
 
+/// Asks Recoolor's Shell extension to `Freeze` or `Fade` the screen. Does nothing
+/// when the extension is not running; a failure only costs the animation.
 pub fn screen_fade(method: &str) {
     if !running(shell_fade::BUS_NAME) {
         return;
@@ -433,11 +468,9 @@ pub fn ptyxis_profile() -> Option<gio::Settings> {
     )
 }
 
+/// Looks on `PATH` rather than running fish: the window asks each time it comes back.
 pub fn fish_installed() -> bool {
-    Command::new("fish")
-        .arg("--version")
-        .output()
-        .is_ok_and(|o| o.status.success())
+    glib::find_program_in_path("fish").is_some()
 }
 
 /// btop writes its config on first run.

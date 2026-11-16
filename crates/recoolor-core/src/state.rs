@@ -13,8 +13,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::apply::{ApplyError, io_err, write_atomic};
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// Keys it does not know (written by a newer Recoolor) are kept as they are, so
+/// an older one can still Reset what it knows, and a newer one gets the rest back.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct State {
     /// Flatpak override entries Recoolor added.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -75,6 +76,9 @@ pub struct State {
     /// GNOME Text Editor's `style-scheme`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_editor_previous: Option<String>,
+    /// What a newer Recoolor recorded.
+    #[serde(flatten)]
+    pub unknown: toml::Table,
 }
 
 /// The `org.gnome.desktop.background` keys Recoolor changes.
@@ -169,6 +173,7 @@ mod tests {
             lock_source: Some("/home/me/Pictures/lock.jxl".into()),
             gtk_theme_previous: Some("Adwaita".into()),
             text_editor_previous: Some("Adwaita-dark".into()),
+            unknown: toml::Table::new(),
         };
         state.save(&path).unwrap();
         assert_eq!(State::load(&path).unwrap(), state);
@@ -186,6 +191,25 @@ mod tests {
         assert!(other.try_lock().is_err());
         drop(held);
         assert!(other.try_lock().is_ok());
+    }
+
+    #[test]
+    fn keeps_what_a_newer_recoolor_recorded() {
+        let home = tempfile::tempdir().unwrap();
+        let path = path(home.path());
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            "icons_previous = \"Adwaita\"\nfuture_previous = \"x\"\n",
+        )
+        .unwrap();
+        let mut state = State::load(&path).unwrap();
+        assert_eq!(state.icons_previous.as_deref(), Some("Adwaita"));
+        state.icons_previous = None;
+        state.save(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("future_previous = \"x\""), "{text}");
+        assert!(!text.contains("icons_previous"));
     }
 
     #[test]

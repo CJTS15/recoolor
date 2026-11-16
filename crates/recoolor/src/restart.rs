@@ -160,67 +160,137 @@ pub fn restart(app: &App) -> Result<(), String> {
         std::thread::sleep(SETTLED - youngest);
     }
     // Read before quitting: the files go with the process.
-    let instances: Vec<(Vec<String>, Vec<String>)> = pids
-        .iter()
-        .map(|&pid| (proc_list(pid, "cmdline"), proc_list(pid, "environ")))
-        .collect();
-    for pid in &pids {
-        let status = Command::new("kill")
+    let instances: Vec<Instance> = pids.iter().map(|&pid| Instance::read(pid)).collect();
+    // One that exited meanwhile needs no signal; the others still quit and come back.
+    let mut problems = Vec::new();
+    let mut asked = Vec::new();
+    for (&pid, instance) in pids.iter().zip(instances) {
+        match Command::new("kill")
             .args(["-TERM", &pid.to_string()])
             .status()
-            .map_err(|e| format!("cannot quit {}: {e}", app.name))?;
-        if !status.success() {
-            return Err(format!("cannot quit {} ({status})", app.name));
+        {
+            Ok(status) if status.success() || !alive(app, pid) => asked.push((pid, instance)),
+            Ok(status) => problems.push(format!("cannot quit {} ({status})", app.name)),
+            Err(e) => problems.push(format!("cannot quit {}: {e}", app.name)),
         }
     }
     // Only the ones asked to quit: a new instance started meanwhile is not ours.
     let deadline = Instant::now() + Duration::from_secs(15);
-    while pids.iter().any(|&pid| alive(app, pid)) && Instant::now() < deadline {
+    while asked.iter().any(|&(pid, _)| alive(app, pid)) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(200));
     }
     let mut stuck = 0;
-    for (&pid, (cmdline, environ)) in pids.iter().zip(instances) {
-        if alive(app, pid) {
+    // A Flatpak reopens through its launcher, once: it restores every window itself.
+    let mut reopened_flatpak = false;
+    for (pid, instance) in &asked {
+        if alive(app, *pid) {
             stuck += 1;
             continue;
         }
-        let Some((program, args)) = cmdline.split_first() else {
-            reopen_from_desktop(app)?;
-            continue;
+        let result = match &instance.flatpak {
+            Some(_) if reopened_flatpak => Ok(()),
+            Some(id) => {
+                reopened_flatpak = true;
+                reopen_from_desktop(app, Some(id))
+            }
+            None => instance
+                .respawn()
+                .or_else(|e| reopen_from_desktop(app, None).map_err(|_| e)),
         };
+        if let Err(e) = result {
+            problems.push(format!("cannot reopen {}: {e}", app.name));
+        }
+    }
+    match stuck {
+        0 => {}
+        n if n == asked.len() => {
+            problems.push(format!("{} did not quit; restart it by hand", app.name))
+        }
+        _ => problems.push(format!(
+            "one {} window did not quit; restart it by hand (the others restarted)",
+            app.name
+        )),
+    }
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(problems.join("; "))
+    }
+}
+
+/// How to start one instance again, read from `/proc` before it quits.
+struct Instance {
+    cmdline: Vec<String>,
+    environ: Vec<String>,
+    /// The Flatpak app id when it runs in a sandbox: its command line names paths
+    /// inside the sandbox, which the host cannot run.
+    flatpak: Option<String>,
+}
+
+impl Instance {
+    fn read(pid: u32) -> Self {
+        let cmdline = proc_list(pid, "cmdline");
+        let environ = proc_list(pid, "environ");
+        let flatpak = environ
+            .iter()
+            .find_map(|kv| kv.strip_prefix("FLATPAK_ID="))
+            .map(str::to_owned)
+            // environ can be unreadable; Flatpak apps live under /app.
+            .or_else(|| {
+                cmdline
+                    .first()
+                    .is_some_and(|p| p.starts_with("/app/"))
+                    .then(String::new)
+            });
+        Self {
+            cmdline,
+            environ,
+            flatpak,
+        }
+    }
+
+    /// Starts it again with the same command line and environment.
+    fn respawn(&self) -> Result<(), String> {
+        let (program, args) = self
+            .cmdline
+            .split_first()
+            .ok_or("its command line was not readable")?;
         let mut child = Command::new(program)
             .args(args)
             .env_clear()
-            .envs(environ.iter().filter_map(|kv| kv.split_once('=')))
+            .envs(self.environ.iter().filter_map(|kv| kv.split_once('=')))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             // Its own process group, so it outlives Recoolor's.
             .process_group(0)
             .spawn()
-            .map_err(|e| format!("cannot reopen {}: {e}", app.name))?;
+            .map_err(|e| e.to_string())?;
         // Collect it when it exits, or it stays a zombie Recoolor's next restart
         // would wait for.
         std::thread::spawn(move || drop(child.wait()));
-    }
-    match stuck {
-        0 => Ok(()),
-        n if n == pids.len() => Err(format!("{} did not quit; restart it by hand", app.name)),
-        _ => Err(format!(
-            "one {} window did not quit; restart it by hand (the others restarted)",
-            app.name
-        )),
+        Ok(())
     }
 }
 
-fn reopen_from_desktop(app: &App) -> Result<(), String> {
-    let entry = gio::AppInfo::all()
-        .into_iter()
-        .find(|a| a.id().is_some_and(|id| app.desktop.contains(&id.as_str())))
-        .ok_or_else(|| format!("{} quit, but its launcher was not found", app.name))?;
+/// Opens `app` from its launcher: the Flatpak's own (`<id>.desktop`) when `flatpak`
+/// names one, else the first of its launchers that is installed.
+fn reopen_from_desktop(app: &App, flatpak: Option<&str>) -> Result<(), String> {
+    let wanted = flatpak
+        .filter(|id| !id.is_empty())
+        .map(|id| format!("{id}.desktop"));
+    let all = gio::AppInfo::all();
+    let entry = wanted
+        .and_then(|w| all.iter().find(|a| a.id().as_deref() == Some(w.as_str())))
+        .or_else(|| {
+            app.desktop
+                .iter()
+                .find_map(|d| all.iter().find(|a| a.id().as_deref() == Some(*d)))
+        })
+        .ok_or("its launcher was not found")?;
     entry
         .launch(&[], gio::AppLaunchContext::NONE)
-        .map_err(|e| format!("cannot reopen {}: {e}", app.name))
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -253,6 +323,31 @@ mod tests {
             child.wait().unwrap();
         }
         assert!(!alive(&sh, window.id()));
+    }
+
+    #[test]
+    fn a_sandboxed_instance_is_reopened_by_its_flatpak_id() {
+        let mut flatpak = Command::new("sleep")
+            .arg("5")
+            .env("FLATPAK_ID", "org.mozilla.firefox")
+            .spawn()
+            .unwrap();
+        let mut native = Command::new("sleep")
+            .arg("5")
+            .env_remove("FLATPAK_ID")
+            .spawn()
+            .unwrap();
+        assert_eq!(
+            Instance::read(flatpak.id()).flatpak.as_deref(),
+            Some("org.mozilla.firefox")
+        );
+        let instance = Instance::read(native.id());
+        assert_eq!(instance.flatpak, None);
+        assert_eq!(instance.cmdline, ["sleep", "5"]);
+        for child in [&mut flatpak, &mut native] {
+            child.kill().unwrap();
+            child.wait().unwrap();
+        }
     }
 
     #[test]

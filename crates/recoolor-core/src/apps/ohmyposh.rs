@@ -19,37 +19,43 @@ const INIT: &str = "oh-my-posh init fish";
 
 /// The `--config` argument of `config.fish`'s oh-my-posh line, as written.
 pub fn config_arg(config_fish: &str) -> Option<&str> {
-    config_fish.lines().find_map(|line| {
-        let line = line.trim_start();
-        if line.starts_with('#') || !line.contains(INIT) {
-            return None;
-        }
-        let (_, rest) = line.split_once("--config")?;
-        let rest = rest.trim_start_matches(['=', ' ']);
-        let quoted = rest.starts_with(['"', '\'']);
-        let rest = rest.trim_start_matches(['"', '\'']);
-        let end = if quoted {
-            rest.find(['"', '\''])?
-        } else {
-            rest.find(char::is_whitespace).unwrap_or(rest.len())
-        };
-        Some(&rest[..end]).filter(|arg| !arg.is_empty())
-    })
-}
-
-/// `config_fish` with the oh-my-posh line's `--config` argument replaced by `arg`.
-pub fn set_config_arg(config_fish: &str, arg: &str) -> String {
-    let Some(old) = config_arg(config_fish) else {
-        return config_fish.to_owned();
-    };
     config_fish
         .lines()
-        .map(|line| {
-            if !line.trim_start().starts_with('#') && line.contains(INIT) {
-                line.replacen(old, arg, 1)
-            } else {
-                line.to_owned()
+        .find_map(|line| arg_span(line).map(|span| &line[span]))
+}
+
+/// Where the `--config` argument sits in `line`, if it is an oh-my-posh line.
+fn arg_span(line: &str) -> Option<std::ops::Range<usize>> {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with('#') || !trimmed.contains(INIT) {
+        return None;
+    }
+    let after = line.find("--config")? + "--config".len();
+    let rest = &line[after..];
+    let rest_trimmed = rest.trim_start_matches(['=', ' ']);
+    let quoted = rest_trimmed.starts_with(['"', '\'']);
+    let value = rest_trimmed.trim_start_matches(['"', '\'']);
+    let start = after + (rest.len() - value.len());
+    let len = if quoted {
+        value.find(['"', '\''])?
+    } else {
+        value.find(char::is_whitespace).unwrap_or(value.len())
+    };
+    (len > 0).then_some(start..start + len)
+}
+
+/// `config_fish` with the oh-my-posh line's `--config` argument replaced by `arg`:
+/// that exact span, not the first text that happens to match it.
+pub fn set_config_arg(config_fish: &str, arg: &str) -> String {
+    let mut done = false;
+    config_fish
+        .lines()
+        .map(|line| match arg_span(line).filter(|_| !done) {
+            Some(span) => {
+                done = true;
+                format!("{}{arg}{}", &line[..span.start], &line[span.end..])
             }
+            None => line.to_owned(),
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -234,6 +240,18 @@ pub fn remove(path: &Path) -> Result<bool, ApplyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn replaces_the_config_value_not_an_earlier_match() {
+        let text = "# x\noh-my-posh init fish --config $HOME/omp/omp.json | source\n";
+        assert_eq!(config_arg(text), Some("$HOME/omp/omp.json"));
+        // "omp" appears earlier on the line than the value's own "omp.json".
+        let text = "set -x OMP omp.json; oh-my-posh init fish --config=\"omp.json\" | source\n";
+        assert_eq!(
+            set_config_arg(text, "recoolor.omp.json"),
+            "set -x OMP omp.json; oh-my-posh init fish --config=\"recoolor.omp.json\" | source\n"
+        );
+    }
     use crate::palette::bundled;
 
     const SOURCE: &str = r##"{
